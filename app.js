@@ -1,7 +1,7 @@
 /* AI Study 2.0 · offline-first study app. Progress lives in localStorage under KEY. */
 (() => {
 'use strict';
-const VERSION = '2.0.0';
+const VERSION = '2.0.1';
 const KEY = 'ai-study-v2', OLD_KEY = 'ai-study-pwa-v1';
 const L = window.LESSONS, U = window.UNITS;
 const byId = Object.fromEntries(L.map((l, i) => [l.id, Object.assign(l, {index: i})]));
