@@ -1,92 +1,34 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#0d0d0f"><meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="mobile-web-app-capable" content="yes"><meta name="format-detection" content="telephone=no">
-<link rel="manifest" href="manifest.webmanifest"><link rel="stylesheet" href="styles.css">
-<link rel="apple-touch-icon" href="icon-192.png"><title>AI Study</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>AI Study</title>
+<meta name="description" content="AI Foundations: 43 short lessons with quizzes, spaced review and a glossary. Works offline.">
+<meta name="theme-color" content="#f6f6f8" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0c0c10" media="(prefers-color-scheme: dark)">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="AI Study">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="format-detection" content="telephone=no">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="stylesheet" href="app.css">
+<script>try{var s=JSON.parse(localStorage.getItem('ai-study-v2')||'{}').settings||{};if(s.theme==='light'||s.theme==='dark')document.documentElement.dataset.theme=s.theme;if(s.size)document.documentElement.dataset.size=s.size}catch(e){}</script>
 </head>
 <body>
-<div class="app">
-  <header class="topbar">
-    <div class="logo"><div class="logoMark">AI</div><div class="logoText"><strong>AI Study</strong><span>Small sessions. Real progress.</span></div></div>
-    <button id="installBtn" class="iconBtn hidden" aria-label="Install AI Study app" title="Install app">↓</button>
-  </header>
-
-  <section id="home" class="view active">
-    <div class="hero">
-      <div class="eyebrow">Your next tiny win</div>
-      <h1 id="resumeTitle">Start with one tiny win</h1>
-      <p id="resumeSub">AI vs Automation</p>
-      <div class="heroTrack" aria-label="Course progress"><div id="heroProgress"></div></div>
-      <div class="resume">
-        <button id="resume" class="primary">Resume</button>
-        <button class="secondary" onclick="document.querySelector('.modes').scrollIntoView({behavior:'smooth'})">Choose session length</button>
-      </div>
-    </div>
-
-    <div class="section">
-      <div class="stats">
-        <div class="stat"><b id="xp">0</b><span>XP</span></div>
-        <div class="stat"><b id="streak">0</b><span>day streak</span></div>
-        <div class="stat"><b id="progress">0%</b><span>complete</span></div>
-      </div>
-    </div>
-
-    <div class="section">
-      <div class="sectionHead"><h2>How much energy do you have?</h2><span>Any option counts.</span></div>
-      <div class="modes">
-        <button class="modeBtn" data-mode="2">2 min<small>rescue</small></button>
-        <button class="modeBtn active" data-mode="5">5 min<small>default</small></button>
-        <button class="modeBtn" data-mode="10">10 min<small>deeper</small></button>
-      </div>
-    </div>
-
-    <div class="section">
-      <div class="sectionHead"><h2>Your journey</h2><span>No backlog.</span></div>
-      <div id="levels" class="levels"></div>
-    </div>
-  </section>
-
-  <section id="study" class="view">
-    <div id="lessonCard" class="card">
-      <div class="lessonKicker" id="lessonNo"></div>
-      <h2 id="lessonTitle"></h2>
-      <div class="track"><div id="studyProgress"></div></div>
-      <div style="height:15px"></div>
-      <div id="learn">
-        <div class="lessonKicker">Tiny concept · <span id="modeLabel">5-min sprint</span></div>
-        <p id="concept"></p>
-        <div id="exampleWrap"><div class="example"><strong>Example</strong><br><span id="example"></span></div></div>
-        <div class="actions"><button id="quizMe" class="primary">Quiz me</button><button id="skip" class="secondary">Quiz only</button></div>
-      </div>
-      <div id="quiz" class="quiz hidden">
-        <div class="lessonKicker">Quick check</div><h3 id="question"></h3><div id="answers" class="answers"></div>
-        <div id="feedback" class="feedback hidden"></div>
-        <div class="actions"><button id="finish" class="primary hidden">Finish sprint</button><button id="retry" class="secondary hidden">Try again</button></div>
-      </div>
-      <div id="done" class="done hidden">
-        <div class="doneBadge">✓</div><h3>Sprint complete</h3><p id="doneMsg">That is enough for today.</p>
-        <div class="actions" style="justify-content:center"><button id="next" class="primary">Next micro-lesson</button><button id="stop" class="secondary">Stop here</button></div>
-      </div>
-    </div>
-  </section>
-
-  <section id="review" class="view">
-    <div class="sectionHead"><h2>Quick Review</h2><span>Only what you've learned.</span></div>
-    <div id="reviewArea" class="levels"></div>
-  </section>
-
-  <div class="install">Your progress stays on this device. The app works offline after the first load.</div>
-</div>
-
-<nav class="bottomNav">
-  <button class="navBtn active" data-view="home">Home</button>
-  <button class="navBtn" data-view="study">Study</button>
-  <button class="navBtn" data-view="review">Review</button>
+<main id="view" tabindex="-1"></main>
+<nav class="tabs" id="tabs" aria-label="Sections">
+  <a href="#/learn" data-tab="learn"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5zM4 20.5A2.5 2.5 0 0 0 6.5 23H20v-5"/></svg><span>Learn</span></a>
+  <a href="#/review" data-tab="review"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 0 1 15.5-6.2L21 8M21 3v5h-5M21 12a9 9 0 0 1-15.5 6.2L3 16M3 21v-5h5"/></svg><span>Review</span><b class="badge" id="dueBadge" hidden></b></a>
+  <a href="#/glossary" data-tab="glossary"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><span>Glossary</span></a>
+  <a href="#/you" data-tab="you"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg><span>Progress</span></a>
 </nav>
-<script src="data.js"></script><script src="app.js"></script>
+<div id="toast" role="status" aria-live="polite"></div>
+<noscript><p style="padding:24px">Please enable JavaScript to use AI Study.</p></noscript>
+<script src="content.js"></script>
+<script src="app.js"></script>
 </body>
 </html>
