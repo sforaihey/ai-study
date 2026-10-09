@@ -1,6 +1,6 @@
 /* AI Study service worker: caches the whole app so it works fully offline.
    Bump VERSION (here and in app.js) on every release. Progress lives in localStorage and is never touched here. */
-const VERSION = '2.0.1';
+const VERSION = '2.1.0';
 const CACHE = 'ai-study-' + VERSION;
 const ASSETS = ['./', 'index.html', 'app.css', 'app.js', 'content.js', 'manifest.webmanifest',
   'icon-192.png', 'icon-512.png', 'icon-maskable-512.png', 'apple-touch-icon.png'];
