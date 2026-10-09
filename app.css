@@ -362,3 +362,21 @@ svg.ar{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:2.2;str
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 @media (max-width:370px){.list .item{flex-wrap:wrap}.list .item .seg{min-width:100%}.tabs a{min-width:84px}.tcard{padding:16px 14px}.tcard b{font-size:16px}}
 @media (min-width:640px){.scard:nth-child(n){width:calc(100% - 120px)}}
+
+/* ── Friends ── */
+.tabs a{min-width:0;flex:1;padding:0 6px}
+.tabs{width:min(380px,calc(100% - 28px));gap:4px;padding:8px 10px}
+.avatar.sm{width:38px;height:38px;font-size:15px;box-shadow:none}
+.avatar.cg1{background:var(--g1)}.avatar.cg2{background:var(--g2)}.avatar.cg3{background:var(--g3)}.avatar.cg4{background:var(--g4)}
+.prow{display:flex;align-items:center;gap:12px;padding:14px 18px}
+.prow+.prow{border-top:1px solid var(--border)}
+.prow .rank{width:18px;text-align:center;color:var(--muted);font-weight:700;font-size:14px}
+.prow .pn{flex:1;min-width:0}.prow .pn b{display:block;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.prow .pn small{color:var(--muted);font-size:13px}
+.prow .pm{text-align:right}.prow .pm b{display:block;font-size:18px;font-weight:700;line-height:1.1}.prow .pm small{color:var(--muted);font-size:12px}
+.addf{display:flex;gap:10px;margin-top:12px}
+.addf input{flex:1;min-width:0;height:54px;padding:0 18px;border-radius:16px;border:1.5px solid var(--border);background:var(--surface);color:var(--text);font:inherit;font-size:17px;letter-spacing:.14em;text-transform:uppercase;outline:none}
+.addf input:focus{border-color:var(--primary)}
+.addf .btn{width:auto;padding:0 24px;min-height:54px}
+.cheer{border:0;cursor:pointer;text-align:left;color:var(--text)}
+.cheer b{font-size:26px}.cheer span{font-size:14px;color:var(--muted)}
+.hero .go{border:0;cursor:pointer;font-family:inherit}

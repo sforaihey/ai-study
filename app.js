@@ -1,7 +1,7 @@
 /* Steady · offline-first learning app for any subject. Courses live in courses/*.js; progress in localStorage. */
 (() => {
 'use strict';
-const VERSION = '3.1.0';
+const VERSION = '3.2.0';
 const KEY = 'steady-v3', V2_KEY = 'ai-study-v2', V1_KEY = 'ai-study-pwa-v1', AI_ID = 'ai-foundations';
 const INTERVALS = [0, 1, 3, 7, 16, 35];            // days until next review, by box
 const REVIEW_MAX = 15, CARDS_MAX = 20, PASS = 80, GOALS = [5, 10, 15, 20], TEST_Q = 10, FINAL_Q = 30;
@@ -9,6 +9,7 @@ const MIN_PER_Q = 0.75, MIN_PER_CARD = 0.2, WPM = 170;
 // AI Study v1 lesson order → AI Foundations lesson ids, so the very first app's completions carry over.
 const OLD_MAP = [['ai-vs-automation'],['ai-ml-dl-genai'],['predictive-vs-generative'],['ai-workloads'],['data-features-labels'],['learning-types'],['classification-regression-clustering'],['train-validate-test'],['overfitting'],['neural-networks'],['training-gradient-descent'],['transformers-attention'],['tokens-context','embeddings'],['prompting-basics'],['rag'],['fine-tuning'],['tools-function-calling','agents'],['should-it-be-ai'],['model-selection'],['evaluating-genai'],['cost-latency-quality'],['deployment-options'],['mlops-llmops'],['drift-monitoring'],['ai-security'],['bias-fairness'],['privacy-ip'],['guardrails-redteaming'],['use-cases-value'],['capstone']];
 
+var cloudReady = false;   // set once the cloud module below has loaded
 const $ = s => document.querySelector(s);
 const view = $('#view');
 const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -73,7 +74,7 @@ function qOf(c, key) {
 const validCard = (c, k) => k.startsWith('t:') ? c.terms.has(k.slice(2)) : !!qOf(c, k);
 
 /* ───────── State ───────── */
-const freshCourse = () => ({done:{}, scores:{}, cards:{}, current:null, tests:{}, certDate:null, notes:{}, stats:{answered:0, correct:0}});
+const freshCourse = () => ({done:{}, scores:{}, cards:{}, current:null, tests:{}, certDate:null, notes:{}, noteAt:{}, stats:{answered:0, correct:0}});
 const fresh = () => ({v:3, courses:{}, last:null, streak:{count:0,last:null}, log:{}, goal:10, goalHit:null, welcomed:false, settings:{theme:'auto', size:'m', name:''}});
 function sanitizeCourse(c, x) {
   const s = freshCourse();
@@ -85,6 +86,7 @@ function sanitizeCourse(c, x) {
   for (const [k, v] of entries(x.tests)) if ((k === 'final' || c.unit(k)) && Number.isFinite(v)) s.tests[k] = Math.max(0, Math.min(100, Math.round(v)));
   if (isDate(x.certDate)) s.certDate = x.certDate;
   for (const [k, v] of entries(x.notes)) if (c.byId[k] && typeof v === 'string' && v.trim()) s.notes[k] = v.slice(0, 5000);
+  for (const [k, v] of entries(x.noteAt)) if (c.byId[k] && Number.isFinite(v)) s.noteAt[k] = v;
   if (x.stats) s.stats = {answered: int(x.stats.answered), correct: Math.min(int(x.stats.correct), int(x.stats.answered))};
   return s;
 }
@@ -131,8 +133,8 @@ function load() {
 }
 let state = load();
 if (migrated) save();
-function save() {
-  try { localStorage.setItem(KEY, JSON.stringify(state)); return true; }
+function save(fromSync) {
+  try { localStorage.setItem(KEY, JSON.stringify(state)); if (!fromSync && cloudReady) scheduleSync(); return true; }
   catch (e) { toast('Couldn’t save progress. Storage may be full or blocked.'); return false; }
 }
 const EMPTY = freshCourse();
@@ -223,7 +225,7 @@ function renderWelcome() {
     <p>Short lessons, quick quizzes and smart review, all offline. Pick a course and keep a steady streak.</p>
     <label class="field"><span>What should we call you?</span><input id="wname" value="${esc(state.settings.name)}" maxlength="60" placeholder="Your name" autocomplete="given-name"></label>
     <div class="stack"><button class="btn white" id="start">Let’s start ${ICON.arrow}</button></div></div>`;
-  $('#start').onclick = () => { state.settings.name = $('#wname').value.trim().slice(0, 60); state.welcomed = true; save(); location.replace('#/home'); };
+  $('#start').onclick = () => { state.settings.name = $('#wname').value.trim().slice(0, 60); state.welcomed = true; save(); location.replace(pendingCode ? '#/add/' + pendingCode : '#/home'); };
 }
 
 /* ───────── Home ───────── */
@@ -251,6 +253,7 @@ function renderHome() {
     <a class="hero" href="${heroHref}"><div class="hx"><div class="num"><b>${m}</b><span>min today</span></div><p>${goalTxt}</p></div><span class="go">${focus ? 'Continue' : 'Start learning'}</span></a>
     ${items.length ? `<h2 class="sec">Up next ${ICON.info}</h2>
       <div class="grid2">${items.map(it => `<a class="tcard" href="${it.href}"><b>${esc(it.title)}</b><span class="tmeta">${it.tagHtml || tag(it.c)}<span class="time ${it.calm ? 'calm' : ''}">${ICON.clock}${esc(it.time)}</span></span></a>`).join('')}</div>` : ''}
+    ${friendsMini()}
     <h2 class="sec">Courses</h2>
     <div class="grid2">${COURSES.map(c => `<a class="gbtn cg${c.theme}" href="${P(c)}">${esc(c.title)}</a>`).join('')}</div>
     <div class="hint">${ICON.plus}<div><b>Want to learn another subject?</b>New courses can be added in the same format. Ask Claude: <i>“Add a Steady course on …”</i></div></div>
@@ -351,7 +354,7 @@ function renderLesson(c, id) {
   </article>`;
   $('#back').onclick = () => goBack(P(c));
   if (canSpeak) $('#listen').onclick = () => speak(l);
-  let t; $('#note').oninput = e => { clearTimeout(t); t = setTimeout(() => { if (e.target.value.trim()) s.notes[id] = e.target.value.slice(0, 5000); else delete s.notes[id]; save(); }, 400); };
+  let t; $('#note').oninput = e => { clearTimeout(t); t = setTimeout(() => { if (e.target.value.trim()) s.notes[id] = e.target.value.slice(0, 5000); else delete s.notes[id]; s.noteAt[id] = Date.now(); save(); }, 400); };
 }
 function onScroll() { const p = $('#readp'); if (!p) return; const h = document.documentElement.scrollHeight - innerHeight; p.style.width = (h > 0 ? Math.min(100, scrollY / h * 100) : 100) + '%'; }
 addEventListener('scroll', onScroll, {passive: true});
@@ -642,6 +645,7 @@ function renderSettings() {
   setTab(null);
   const seg = (name, opts, cur) => `<div class="seg" role="group">${opts.map(([v, t]) => `<button data-${name}="${v}" aria-pressed="${String(v) === String(cur)}">${t}</button>`).join('')}</div>`;
   view.innerHTML = topbar('Settings') + `<div class="fade">
+    ${CLOUD ? `<a class="rowlink" href="#/account"><span><b style="font-weight:500">${signedIn() ? 'Account · ' + esc(auth.user.email) : 'Create account or sign in'}</b><small>${signedIn() ? (cloud.syncedAt ? 'Synced ' + ago(cloud.syncedAt) : 'Not synced yet') : 'Sync between phones and study with friends'}</small></span>${ICON.arrow}</a>` : ''}
     <label class="field" style="margin-top:4px"><span>Your name</span><input id="sname" value="${esc(state.settings.name)}" maxlength="60" placeholder="Your name" autocomplete="name"></label>
     <h2 class="sec">Daily goal</h2>
     <div class="list"><div class="item"><div><b>Minutes per day</b><p>Lessons, reviews and flashcards all count.</p></div>${seg('goal', GOALS.map(g => [g, g]), state.goal)}</div></div>
@@ -687,9 +691,22 @@ function mergeCourse(a, b) {
   for (const [k, v] of Object.entries(b.scores)) if (!a.scores[k] || v[0] > a.scores[k][0]) a.scores[k] = v;
   for (const [k, v] of Object.entries(b.cards)) if (!a.cards[k] || v.box > a.cards[k].box) a.cards[k] = v;
   for (const [k, v] of Object.entries(b.tests)) a.tests[k] = Math.max(a.tests[k] || 0, v);
-  for (const [k, v] of Object.entries(b.notes)) if (!a.notes[k]) a.notes[k] = v; else if (!a.notes[k].includes(v)) a.notes[k] += '\n\n' + v;
+  for (const k of new Set([...Object.keys(b.notes), ...Object.keys(b.noteAt || {})])) {        // newest note edit wins
+    const ta = (a.noteAt || {})[k] || 0, tb = (b.noteAt || {})[k] || 0;
+    if (tb > ta) { if (b.notes[k]) a.notes[k] = b.notes[k]; else delete a.notes[k]; (a.noteAt = a.noteAt || {})[k] = tb; }
+    else if (!ta && !tb && b.notes[k] && !a.notes[k]) a.notes[k] = b.notes[k];
+  }
   if (b.certDate && (!a.certDate || b.certDate < a.certDate)) a.certDate = b.certDate;
   if (b.stats.answered > a.stats.answered) a.stats = b.stats;
+}
+function mergeState(inc) {
+  for (const [id, v] of Object.entries(inc.courses)) { if (!CB[id]) { if (!state.courses[id]) state.courses[id] = v; continue; } mergeCourse(cs(CB[id], true), v); const nx = nextLesson(CB[id]); if (state.courses[id].current && state.courses[id].done[state.courses[id].current]) state.courses[id].current = nx ? nx.id : null; }
+  for (const [k, v] of Object.entries(inc.log)) state.log[k] = Math.max(state.log[k] || 0, v);
+  if (!state.settings.name && inc.settings.name) state.settings.name = inc.settings.name;
+  if ((inc.streak.last || '') > (state.streak.last || '') || (inc.streak.last === state.streak.last && inc.streak.count > state.streak.count)) state.streak = inc.streak;
+  if (GOALS.includes(inc.goal) && inc.goal !== 10 && state.goal === 10) state.goal = inc.goal;
+  if (!state.last && inc.last) state.last = inc.last;
+  if (inc.welcomed) state.welcomed = true;
 }
 function importBackup(file) {
   const r = new FileReader();
@@ -703,11 +720,7 @@ function importBackup(file) {
       else if (j && Array.isArray(j.done)) inc = fromV1(j);
       else throw Error();
     } catch (e) { toast('That file isn’t a valid Steady backup.'); return; }
-    for (const [id, v] of Object.entries(inc.courses)) { if (!CB[id]) { if (!state.courses[id]) state.courses[id] = v; continue; } mergeCourse(cs(CB[id], true), v); const nx = nextLesson(CB[id]); if (state.courses[id].current && state.courses[id].done[state.courses[id].current]) state.courses[id].current = nx ? nx.id : null; }
-    for (const [k, v] of Object.entries(inc.log)) state.log[k] = Math.max(state.log[k] || 0, v);
-    if (!state.settings.name && inc.settings.name) state.settings.name = inc.settings.name;
-    if ((inc.streak.last || '') > (state.streak.last || '') || (inc.streak.last === state.streak.last && inc.streak.count > state.streak.count)) state.streak = inc.streak;
-    if (!state.last && inc.last) state.last = inc.last;
+    mergeState(inc);
     state.welcomed = true;
     save(); toast(`Backup restored · ${COURSES.reduce((a, c) => a + doneCount(c), 0)} lessons complete.`); renderSettings();
   };
@@ -759,6 +772,216 @@ function renderCertificate(c) {
   $('#dl').onclick = () => drawCertificate(c, cv).then(() => cv.toBlob(b => download(b, `${c.title.replace(/[^\w]+/g, '-')}-certificate.png`), 'image/png'));
 }
 
+/* ───────── Cloud: accounts, sync, friends (Supabase; optional) ───────── */
+const CFG = window.STEADY_CONFIG || {}, CLOUD = !!(CFG.supabaseUrl && CFG.supabaseKey);
+const AUTH_KEY = 'steady-auth', FRIENDS_KEY = 'steady-friends';
+const CHEERS = {'keep-going': ['👏', 'Keep going!'], 'streak': ['🔥', 'Great streak!'], 'study-together': ['📚', 'Study with me today?'], 'congrats': ['🎉', 'Congrats!']};
+const readJSON = k => { try { return JSON.parse(localStorage.getItem(k) || 'null'); } catch (e) { return null; } };
+const writeJSON = (k, v) => { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} };
+let auth = readJSON(AUTH_KEY), cloud = readJSON(FRIENDS_KEY) || {me: null, people: [], cheers: [], syncedAt: 0};
+const signedIn = () => CLOUD && !!(auth && auth.access_token && auth.user);
+function setSession(d) {
+  auth = {access_token: d.access_token, refresh_token: d.refresh_token, expires_at: Math.floor(Date.now() / 1000) + (d.expires_in || 3600), user: {id: d.user.id, email: d.user.email}};
+  writeJSON(AUTH_KEY, auth);
+}
+function clearSession() { auth = null; cloud = {me: null, people: [], cheers: [], syncedAt: 0}; writeJSON(AUTH_KEY, null); writeJSON(FRIENDS_KEY, null); }
+async function api(path, {method = 'GET', body, prefer, anon} = {}) {
+  if (!anon) await ensureToken();
+  const headers = {apikey: CFG.supabaseKey, 'Content-Type': 'application/json'};
+  if (!anon && auth) headers.Authorization = 'Bearer ' + auth.access_token;
+  if (prefer) headers.Prefer = prefer;
+  const r = await fetch(CFG.supabaseUrl.replace(/\/$/, '') + path, {method, headers, body: body === undefined ? undefined : JSON.stringify(body)});
+  const text = await r.text(); let data = null; try { data = text ? JSON.parse(text) : null; } catch (e) {}
+  if (!r.ok) { const err = new Error((data && (data.msg || data.message || data.error_description || data.error)) || `Request failed (${r.status})`); err.status = r.status; throw err; }
+  return data;
+}
+async function ensureToken() {
+  if (!auth) throw new Error('Not signed in');
+  if (auth.expires_at - 60 > Date.now() / 1000) return;
+  try { setSession(await api('/auth/v1/token?grant_type=refresh_token', {method: 'POST', body: {refresh_token: auth.refresh_token}, anon: true})); }
+  catch (e) { if (e.status === 400 || e.status === 401) { clearSession(); toast('You were signed out. Please sign in again.'); } throw e; }
+}
+async function signUp(name, email, password) {
+  const d = await api('/auth/v1/signup', {method: 'POST', body: {email, password, data: {name}}, anon: true});
+  if (!d || !d.access_token) throw new Error('Account created, but email confirmation is switched on in Supabase. Turn off “Confirm email”, then sign in.');
+  setSession(d);
+}
+async function signIn(email, password) { setSession(await api('/auth/v1/token?grant_type=password', {method: 'POST', body: {email, password}, anon: true})); }
+async function signOut() { try { await api('/auth/v1/logout', {method: 'POST'}); } catch (e) {} clearSession(); }
+
+const round1 = n => Math.round(n * 10) / 10;
+function buildSummary() {
+  const t = today(); let m7 = 0; for (let i = 0; i < 7; i++) m7 += minsOn(addDays(t, -i));
+  return {user_id: auth.user.id, name: state.settings.name.trim() || 'Learner', streak: streakNow(), streak_last: state.streak.last, minutes_7d: round1(m7), minutes_today: round1(minsOn(t)),
+    lessons_done: COURSES.reduce((a, c) => a + doneCount(c), 0),
+    courses: COURSES.filter(started).map(c => ({id: c.id, title: c.title, short: c.short, theme: c.theme, done: doneCount(c), total: c.lessons.length, cert: certEarned(c)})),
+    updated_at: new Date().toISOString()};
+}
+let syncing = null, syncTimer = null;
+function scheduleSync() { if (!signedIn()) return; clearTimeout(syncTimer); syncTimer = setTimeout(() => syncNow(), 3000); }
+async function syncNow(opts = {}) {
+  if (!signedIn() || !navigator.onLine) return false;
+  if (syncing) return syncing;
+  syncing = (async () => {
+    const me = auth.user.id;
+    const rows = await api(`/rest/v1/progress?select=state&user_id=eq.${me}`);
+    if (rows && rows[0] && rows[0].state) mergeState(sanitize(rows[0].state));
+    const theme = state.settings.theme, size = state.settings.size;              // display prefs stay per-device
+    await api('/rest/v1/progress', {method: 'POST', prefer: 'resolution=merge-duplicates,return=minimal', body: {user_id: me, state, updated_at: new Date().toISOString()}});
+    await api('/rest/v1/summaries', {method: 'POST', prefer: 'resolution=merge-duplicates,return=minimal', body: buildSummary()});
+    state.settings.theme = theme; state.settings.size = size;
+    const [profiles, sums, cheers] = await Promise.all([
+      api('/rest/v1/profiles?select=id,name,friend_code'),
+      api('/rest/v1/summaries?select=*'),
+      api(`/rest/v1/cheers?select=id,from_id,kind,created_at,seen&to_id=eq.${me}&order=created_at.desc&limit=20`)]);
+    const meProfile = profiles.find(p => p.id === me) || {};
+    if (meProfile.name && meProfile.name !== (state.settings.name.trim() || 'Learner') && state.settings.name.trim()) api(`/rest/v1/profiles?id=eq.${me}`, {method: 'PATCH', body: {name: state.settings.name.trim()}}).catch(() => {});
+    if (!state.settings.name.trim() && meProfile.name) state.settings.name = meProfile.name;
+    const byId = Object.fromEntries(sums.map(x => [x.user_id, x]));
+    cloud = {me: {id: me, code: meProfile.friend_code}, people: profiles.map(p => ({id: p.id, name: (byId[p.id] || p).name || p.name, me: p.id === me, sum: byId[p.id] || null})), cheers, syncedAt: Date.now()};
+    writeJSON(FRIENDS_KEY, cloud);
+    save(true);
+    const fresh = cheers.filter(c => !c.seen);
+    if (fresh.length) {
+      const who = id => (cloud.people.find(p => p.id === id) || {}).name || 'A friend';
+      toast(fresh.length === 1 ? `${who(fresh[0].from_id)}: ${CHEERS[fresh[0].kind][0]} ${CHEERS[fresh[0].kind][1]}` : `${fresh.length} cheers from friends ${CHEERS[fresh[0].kind][0]}`);
+      api(`/rest/v1/cheers?id=in.(${fresh.map(c => c.id).join(',')})`, {method: 'PATCH', body: {seen: true}}).catch(() => {});
+    }
+    return true;
+  })().catch(e => { if (opts.loud) toast(navigator.onLine ? `Sync failed: ${e.message}` : 'You’re offline. Progress will sync later.'); return false; })
+      .finally(() => { syncing = null; if (opts.rerender) route(); });
+  return syncing;
+}
+const ago = ms => { const m = Math.round((Date.now() - ms) / 60000); return m < 1 ? 'just now' : m < 60 ? `${m} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} d ago`; };
+const hue = id => [...String(id)].reduce((a, ch) => a + ch.charCodeAt(0), 0) % 4 + 1;
+const personStreak = sm => sm && sm.streak_last && sm.streak_last >= addDays(today(), -1) ? sm.streak : 0;
+const personWeek = sm => sm && Date.now() - Date.parse(sm.updated_at) < 7 * 864e5 ? Math.round(sm.minutes_7d) : 0;
+const leaderboard = () => cloud.people.map(p => p.me ? {...p, sum: buildSummary()} : p).sort((a, b) => personWeek(b.sum) - personWeek(a.sum) || personStreak(b.sum) - personStreak(a.sum));
+let pendingCode = null;
+
+function renderAccount() {
+  setTab(null);
+  if (!CLOUD) { view.innerHTML = topbar('Account') + `<div class="card empty fade"><h2>Accounts aren’t switched on yet</h2><p>The online backend hasn’t been connected. Everything still works offline on this device.</p></div>`; $('#back').onclick = () => goBack('#/settings'); return; }
+  if (signedIn()) {
+    view.innerHTML = topbar('Account') + `<div class="fade">
+      <div class="profile"><span class="avatar lg">${esc(initial())}</span><div><h1>${esc(state.settings.name.trim() || 'Learner')}</h1><p>${esc(auth.user.email)}</p></div></div>
+      <div class="list" style="margin-top:22px"><div class="item"><div><b>Sync</b><p>${cloud.syncedAt ? 'Last synced ' + ago(cloud.syncedAt) : 'Not synced yet'}</p></div><button class="linkbtn" id="syncnow">Sync now</button></div>
+        <div class="item"><div><b>Friend code</b><p>Share it so friends can add you</p></div><b style="letter-spacing:.12em">${esc((cloud.me && cloud.me.code) || '…')}</b></div></div>
+      <div class="stack"><button class="btn" id="signout">Sign out on this device</button></div>
+      <p class="foot">Signing out keeps your progress on this phone. <button class="linkbtn danger" id="delacc" style="font-size:13px">Delete my account</button></p></div>`;
+    $('#back').onclick = () => goBack('#/settings');
+    $('#syncnow').onclick = async () => { $('#syncnow').textContent = 'Syncing…'; if (await syncNow({loud: true})) toast('Synced.'); renderAccount(); };
+    $('#signout').onclick = async () => { await signOut(); toast('Signed out. Your progress stays on this device.'); location.replace('#/settings'); };
+    $('#delacc').onclick = async () => {
+      if (!confirm('Permanently delete your online account, synced progress and friend connections? Progress on this phone is kept.')) return;
+      try { await api('/rest/v1/rpc/delete_account', {method: 'POST', body: {}}); clearSession(); toast('Account deleted.'); location.replace('#/settings'); } catch (e) { toast(e.message); }
+    };
+    return;
+  }
+  let mode = 'up';
+  const draw = () => {
+    view.innerHTML = topbar('Account') + `<div class="fade">
+      <div class="hi"><h1>${mode === 'up' ? 'Create your account' : 'Welcome back'}</h1><p>Sync your progress between iPhone and Android and study with friends.</p></div>
+      <div class="seg" role="group" style="margin:22px 0 4px"><button data-m="up" aria-pressed="${mode === 'up'}">Create account</button><button data-m="in" aria-pressed="${mode === 'in'}">Sign in</button></div>
+      <form id="authf">
+        ${mode === 'up' ? `<label class="field"><span>Name</span><input id="aname" value="${esc(state.settings.name)}" maxlength="60" required autocomplete="name"></label>` : ''}
+        <label class="field"><span>Email</span><input id="aemail" type="email" required autocomplete="email" inputmode="email"></label>
+        <label class="field"><span>Password</span><input id="apass" type="password" minlength="8" required autocomplete="${mode === 'up' ? 'new-password' : 'current-password'}" placeholder="${mode === 'up' ? 'At least 8 characters' : ''}"></label>
+        <div class="stack"><button class="btn primary" id="asub" type="submit">${mode === 'up' ? 'Create account' : 'Sign in'}</button></div>
+      </form>
+      <p class="fine" style="margin-top:16px">Your name, email and study progress are stored in Steady’s online database (Supabase). Friends you add can see your name, streak, minutes studied and course progress, never your notes or answers. You can delete your account any time.</p></div>`;
+    $('#back').onclick = () => goBack('#/settings');
+    view.querySelectorAll('[data-m]').forEach(b => b.onclick = () => { mode = b.dataset.m; draw(); });
+    $('#authf').onsubmit = async e => {
+      e.preventDefault(); const btn = $('#asub'); btn.disabled = true; btn.textContent = 'Please wait…';
+      try {
+        const email = $('#aemail').value.trim(), pw = $('#apass').value;
+        if (mode === 'up') { const nm = $('#aname').value.trim(); if (nm) state.settings.name = nm.slice(0, 60); save(true); await signUp(state.settings.name, email, pw); }
+        else await signIn(email, pw);
+        await syncNow({loud: true});
+        if (pendingCode) { const code = pendingCode; pendingCode = null; return location.replace('#/add/' + code); }
+        toast(mode === 'up' ? 'Account created. Your progress is now synced.' : 'Signed in and synced.');
+        location.replace('#/friends');
+      } catch (err) { toast(err.message.replace('Invalid login credentials', 'Email or password is incorrect.')); btn.disabled = false; btn.textContent = mode === 'up' ? 'Create account' : 'Sign in'; }
+    };
+  };
+  draw();
+}
+function personRow(p, i) {
+  const sm = p.sum;
+  return `<a class="prow" href="${p.me ? '#/you' : '#/friend/' + p.id}"><span class="rank">${i + 1}</span><span class="avatar sm cg${hue(p.id)}">${esc((p.name || '?')[0].toUpperCase())}</span>
+    <span class="pn"><b>${esc(p.name || 'Friend')}${p.me ? ' (you)' : ''}</b><small>${personStreak(sm) ? `🔥 ${personStreak(sm)}-day streak` : 'No streak right now'}</small></span><span class="pm"><b>${personWeek(sm)}</b><small>min</small></span></a>`;
+}
+function renderFriends() {
+  setTab('friends');
+  let body;
+  if (!CLOUD) body = `<div class="card empty"><h2>Friends are coming soon</h2><p>The online backend isn’t connected yet. Once it is, you can create an account, sync devices and study with friends.</p></div>`;
+  else if (!signedIn()) body = `<div class="hero" style="cursor:default"><div class="hx"><div class="num"><b>Study together</b></div><p>Create a free account to sync your progress across phones, add friends with a code, compare weekly minutes and send cheers.</p></div></div>
+    <div class="stack"><a class="btn primary" href="#/account">Create account or sign in</a></div>`;
+  else {
+    const friends = cloud.people.filter(p => !p.me), board = leaderboard();
+    const cheers = (cloud.cheers || []).slice(0, 5);
+    const who = id => (cloud.people.find(p => p.id === id) || {}).name || 'A friend';
+    body = `<div class="hero"><div class="hx"><p style="margin:0">Your friend code</p><div class="num"><b style="letter-spacing:.12em">${esc((cloud.me && cloud.me.code) || '······')}</b></div><p>Friends enter this code, or open your invite link.</p></div><button class="go" id="share">Share</button></div>
+      <form class="addf" id="addf"><input id="fcode" maxlength="6" placeholder="Friend’s code" autocapitalize="characters" autocomplete="off" aria-label="Friend's code"><button class="btn primary" type="submit">Add</button></form>
+      <h2 class="sec">This week <small>last 7 days · minutes</small></h2>
+      <div class="list">${board.map(personRow).join('')}</div>
+      ${!friends.length ? '<p class="fine center">Add a friend to start a leaderboard.</p>' : ''}
+      ${cheers.length ? `<h2 class="sec">Cheers for you</h2><div class="list">${cheers.map(c => `<div class="item"><span>${CHEERS[c.kind][0]} <b>${esc(who(c.from_id))}</b>: ${CHEERS[c.kind][1]}</span><small style="color:var(--muted)">${ago(Date.parse(c.created_at))}</small></div>`).join('')}</div>` : ''}
+      <p class="foot">${cloud.syncedAt ? 'Updated ' + ago(cloud.syncedAt) : ''} · <button class="linkbtn" id="refresh" style="font-size:13px">Refresh</button></p>`;
+  }
+  view.innerHTML = header() + `<div class="fade"><div class="hi"><h1>Friends</h1><p>${signedIn() ? 'Keep each other steady' : 'Learn together, stay consistent'}</p></div><div style="height:6px"></div>${body}</div>`;
+  if (!signedIn()) return;
+  const link = `${location.origin}${location.pathname}#/add/${(cloud.me && cloud.me.code) || ''}`;
+  $('#share').onclick = async () => {
+    const text = `Study with me on Steady! Add me with code ${(cloud.me && cloud.me.code) || ''}: ${link}`;
+    try { if (navigator.share) await navigator.share({title: 'Steady', text}); else { await navigator.clipboard.writeText(text); toast('Invite copied. Paste it in WhatsApp or anywhere.'); } } catch (e) {}
+  };
+  $('#addf').onsubmit = e => { e.preventDefault(); const v = $('#fcode').value.trim().toUpperCase(); if (v) location.hash = '#/add/' + v; };
+  $('#refresh').onclick = async () => { $('#refresh').textContent = 'Refreshing…'; await syncNow({loud: true}); renderFriends(); };
+}
+function renderFriend(id) {
+  setTab(null);
+  const p = cloud.people.find(x => x.id === id); if (!p) return location.replace('#/friends');
+  const sm = p.sum;
+  view.innerHTML = topbar(esc(p.name)) + `<div class="fade">
+    <div class="profile"><span class="avatar lg cg${hue(p.id)}">${esc((p.name || '?')[0].toUpperCase())}</span><div><h1>${esc(p.name)}</h1><p>${sm ? 'Updated ' + ago(Date.parse(sm.updated_at)) : 'Hasn’t synced yet'}</p></div></div>
+    <div class="stats" style="margin-top:22px"><div class="stat"><b>${personStreak(sm)}</b><span>day streak</span></div><div class="stat"><b>${personWeek(sm)}</b><span>minutes this week</span></div>
+      <div class="stat"><b>${sm ? sm.lessons_done : 0}</b><span>lessons done</span></div><div class="stat"><b>${sm ? sm.courses.filter(c => c.cert).length : 0}</b><span>certificates</span></div></div>
+    ${sm && sm.courses.length ? `<h2 class="sec">Courses</h2>${sm.courses.map(c => `<div class="card" style="margin-bottom:10px"><div style="display:flex;justify-content:space-between;gap:10px"><b style="font-weight:500">${esc(c.title)}</b>${c.cert ? '<span class="tag tg">Certificate ✓</span>' : ''}</div>
+      <div class="progress" style="margin-top:10px"><div class="bar"><i style="width:${Math.round(c.done / c.total * 100)}%"></i></div><span>${c.done}/${c.total}</span></div></div>`).join('')}` : ''}
+    <h2 class="sec">Send a cheer</h2>
+    <div class="grid2">${Object.entries(CHEERS).map(([k, [e, t]]) => `<button class="tcard cheer" data-k="${k}"><b>${e}</b><span>${t}</span></button>`).join('')}</div>
+    <p class="foot"><button class="linkbtn danger" id="unfriend" style="font-size:13px">Remove friend</button></p></div>`;
+  $('#back').onclick = () => goBack('#/friends');
+  view.querySelectorAll('.cheer').forEach(b => b.onclick = async () => {
+    try { await api('/rest/v1/cheers', {method: 'POST', prefer: 'return=minimal', body: {from_id: auth.user.id, to_id: id, kind: b.dataset.k}}); toast(`Cheer sent to ${p.name} ${CHEERS[b.dataset.k][0]}`); }
+    catch (e) { toast(navigator.onLine ? e.message : 'You’re offline. Try again when connected.'); }
+  });
+  $('#unfriend').onclick = async () => {
+    if (!confirm(`Remove ${p.name} from your friends? You’ll stop seeing each other’s progress.`)) return;
+    try { await api('/rest/v1/rpc/remove_friend', {method: 'POST', body: {friend: id}}); await syncNow(); location.replace('#/friends'); } catch (e) { toast(e.message); }
+  };
+}
+async function addFriendRoute(code) {
+  code = String(code || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
+  if (!CLOUD) return location.replace('#/friends');
+  if (!signedIn()) { pendingCode = code; toast('Create an account or sign in to add your friend.'); return location.replace('#/account'); }
+  view.innerHTML = `<div class="card empty fade"><h2>Adding friend…</h2></div>`;
+  try { const f = await api('/rest/v1/rpc/add_friend', {method: 'POST', body: {code}}); await syncNow(); toast(`You and ${f.name} are now friends.`); }
+  catch (e) { toast(navigator.onLine ? e.message : 'You’re offline. Try again when connected.'); }
+  location.replace('#/friends');
+}
+function friendsMini() {
+  if (!signedIn() || !cloud.people.some(p => !p.me)) return CLOUD && !signedIn() ? `<a class="rowlink" href="#/friends" style="margin-top:16px"><span>Study with friends<small>Create an account to sync devices and compare streaks</small></span>${ICON.arrow}</a>` : '';
+  return `<h2 class="sec">Friends this week</h2><div class="list">${leaderboard().slice(0, 3).map(personRow).join('')}</div>`;
+}
+cloudReady = true;
+if (CLOUD) {
+  addEventListener('online', () => syncNow());
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') syncNow({rerender: ['#/friends', '#/home', ''].includes(location.hash)}); });
+}
+
 /* ───────── Router ───────── */
 const LEGACY = ['lesson', 'quiz', 'unit', 'test', 'final', 'certificate'];
 function route() {
@@ -766,7 +989,7 @@ function route() {
   const parts = (location.hash || '#/home').split('/'), a = parts[1];
   if (LEGACY.includes(a) && CB[AI_ID]) return location.replace(`#/c/${AI_ID}/${parts.slice(1).join('/')}`);   // links from AI Study 2.x
   if (a === 'learn' || a === 'glossary') return location.replace(a === 'learn' ? '#/home' : '#/search');
-  if (!state.welcomed && a !== 'welcome') return location.replace('#/welcome');
+  if (!state.welcomed && a !== 'welcome') { if (a === 'add') pendingCode = parts[2]; return location.replace('#/welcome'); }
   const inQuiz = (a === 'c' && ['quiz', 'test', 'final'].includes(parts[3])) || (a === 'review' && parts[2]);
   if (!inQuiz) session = null;
   if (!(a === 'cards' || (a === 'c' && parts[3] === 'cards'))) deck = null;
@@ -785,6 +1008,10 @@ function route() {
   }
   else if (a === 'welcome') state.welcomed ? location.replace('#/home') : renderWelcome();
   else if (a === 'courses') renderCourses();
+  else if (a === 'friends') renderFriends();
+  else if (a === 'friend') renderFriend(parts[2]);
+  else if (a === 'account') renderAccount();
+  else if (a === 'add') addFriendRoute(parts[2]);
   else if (a === 'review' && (parts[2] === 'due' || parts[2] === 'mix')) routeReviewSession(parts[2]);
   else if (a === 'review') renderReview();
   else if (a === 'cards') routeCards(null);
@@ -799,6 +1026,7 @@ applySettings();
 if (!COURSES.length) view.innerHTML = '<div class="card empty"><h2>No courses found</h2><p>Course files failed to load. Reload the app while online.</p></div>';
 else route();
 if (notice) setTimeout(() => toast(notice), 400);
+if (signedIn()) setTimeout(() => syncNow({rerender: ['#/friends', '#/home'].includes(location.hash)}), 600);
 
 /* ───────── Offline (service worker) ───────── */
 if ('serviceWorker' in navigator && location.protocol !== 'file:') {

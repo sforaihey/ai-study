@@ -28,6 +28,16 @@ Open it once online; after that it works fully offline. Progress stays on the de
 
 Lesson `id`s are permanent: progress is stored by id.
 
+## Accounts, sync & friends (optional)
+Steady works fully offline without an account. With the Supabase backend connected, people can create an account (email + password), sync progress between phones, add friends by code or invite link, see a weekly leaderboard, and send cheers.
+
+Setup (once):
+1. Create a Supabase project. In **Authentication → Providers → Email**, turn **off** “Confirm email”.
+2. Open **SQL Editor**, paste `supabase/schema.sql`, and run it.
+3. Put the project URL and the public **anon/publishable** key into `config.js`, and bump `VERSION` in `sw.js` and `app.js`. Never put the `service_role` key in the app.
+
+Friends can see each other’s name, streak, weekly minutes and course progress only. Notes and answers stay private (row-level security). Users can delete their own account from the Account screen.
+
 ## Design credit
 UI adapted from “Educational App | Mobile app Concept” by Nickelfox (Figma Community, CC BY 4.0). Illustrations and card patterns are original.
 
