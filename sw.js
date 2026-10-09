@@ -1,8 +1,8 @@
-/* AI Study service worker: caches the whole app so it works fully offline.
-   Bump VERSION (here and in app.js) on every release. Progress lives in localStorage and is never touched here. */
-const VERSION = '2.1.0';
-const CACHE = 'ai-study-' + VERSION;
-const ASSETS = ['./', 'index.html', 'app.css', 'app.js', 'content.js', 'manifest.webmanifest',
+/* Steady service worker: caches the whole app so it works fully offline.
+   Bump VERSION (here and in app.js) on every release, and list every course file in ASSETS. Progress lives in localStorage and is never touched here. */
+const VERSION = '3.0.0';
+const CACHE = 'steady-' + VERSION;
+const ASSETS = ['./', 'index.html', 'app.css', 'app.js', 'courses/ai-foundations.js', 'courses/personal-finance.js', 'manifest.webmanifest',
   'icon-192.png', 'icon-512.png', 'icon-maskable-512.png', 'apple-touch-icon.png'];
 
 self.addEventListener('install', e => {
@@ -13,7 +13,7 @@ self.addEventListener('install', e => {
 
 self.addEventListener('activate', e => {
   e.waitUntil(caches.keys()
-    .then(keys => Promise.all(keys.filter(k => k !== CACHE && k.startsWith('ai-study')).map(k => caches.delete(k))))
+    .then(keys => Promise.all(keys.filter(k => k !== CACHE && (k.startsWith('ai-study') || k.startsWith('steady'))).map(k => caches.delete(k))))
     .then(() => self.clients.claim()));
 });
 

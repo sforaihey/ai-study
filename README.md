@@ -1,21 +1,32 @@
-# AI Study
+# Steady
 
-An offline-first study app for **AI Foundations** (~4.5 hours): 43 lessons in 8 units, each with a hands-on "Try it" task, 129 lesson questions plus 40 scenario questions, unit tests, a final exam and a completion certificate. Also includes spaced-repetition review, flashcards for 170 key terms, a daily goal, listen-aloud, personal notes and mastery tracking.
+A short-but-consistent learning app for any subject. Offline-first, installable, no account needed.
 
 Live: https://sforaihey.github.io/ai-study/
 
-## Install on your phone
-- **Android (Chrome):** open the link → menu ⋮ → **Install app** / **Add to Home screen**.
-- **iPhone (Safari):** open the link → Share → **Add to Home Screen**.
+## Courses
+| Course | Lessons | Units | Time |
+|---|---|---|---|
+| 🤖 AI Foundations | 43 | 8 | ~4.5 h |
+| 💰 Personal Finance & Investing | 29 | 7 | ~3.4 h |
 
-Open it once while online. After that it works fully offline. Progress is saved on the device only; use **Progress → Export** to back it up.
+Every course works the same way: ~4-minute lessons (explanation, key points, example, misconception, "Try it" task, go-deeper section, key terms), a 3-question quiz with explanations, unit recaps and flashcards, 10-question unit tests, a 30-question final exam (80% to pass) and a certificate. Review (spaced repetition) and Search cover all courses.
+
+## Install on your phone
+- **Android (Chrome):** open the link → menu ⋮ → **Install app**.
+- **iPhone (Safari):** Share → **Add to Home Screen**.
+
+Open it once online; after that it works fully offline. Progress stays on the device. Use **Progress → Export** to back it up.
+
+## Adding a course
+1. Create `courses/<course-id>.js` that calls `(window.COURSES = window.COURSES || []).push({...})`. Copy the structure of `courses/personal-finance.js`:
+   - `id, title, subtitle, icon (emoji), about, disclaimer?`
+   - `units: [{n, title, blurb, objectives: [3], scenarios: [[question, [4 options], correctIndex, why] ×5]}]`
+   - `lessons: [{id, unit, title, intro, body[], points[], example, myth ("Myth: … Reality: …"), try, deeper[], terms[[term, definition]], quiz[[q, [4 options], correctIndex, why] ×3]}]`
+2. Add a `<script src="courses/<course-id>.js">` line to `index.html`, before `app.js`.
+3. Add the file to `ASSETS` in `sw.js` and bump `VERSION` in **both** `sw.js` and `app.js`.
+
+Lesson `id`s are permanent: progress is stored by id.
 
 ## Files
-| File | Purpose |
-|---|---|
-| `content.js` | All course content: units, objectives, lessons, quizzes, terms, Try-it tasks, scenario questions. Lesson `id`s are permanent; progress is keyed by them. |
-| `app.js` | The app: routing, lessons, quiz engine, spaced review, glossary, backup. |
-| `app.css` | Design (light/dark). |
-| `sw.js` | Offline cache. **Bump `VERSION` in `sw.js` and `app.js` on every release** so phones pick up the update. |
-
-No build step: GitHub Pages serves the files from `main` directly.
+`index.html` shell · `app.js` app · `app.css` design · `sw.js` offline cache · `courses/` content. No build step: GitHub Pages serves `main` directly.
