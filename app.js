@@ -1,7 +1,7 @@
 /* Steady · offline-first learning app for any subject. Courses live in courses/*.js; progress in localStorage. */
 (() => {
 'use strict';
-const VERSION = '3.0.0';
+const VERSION = '3.1.0';
 const KEY = 'steady-v3', V2_KEY = 'ai-study-v2', V1_KEY = 'ai-study-pwa-v1', AI_ID = 'ai-foundations';
 const INTERVALS = [0, 1, 3, 7, 16, 35];            // days until next review, by box
 const REVIEW_MAX = 15, CARDS_MAX = 20, PASS = 80, GOALS = [5, 10, 15, 20], TEST_Q = 10, FINAL_Q = 30;
@@ -23,27 +23,32 @@ const fmtMin = m => { m = Math.round(m); return m < 60 ? `${m} min` : `${Math.fl
 const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
 const fmtDate = (d, opts) => new Date(d + 'T12:00').toLocaleDateString(undefined, opts);
 const entries = o => o && typeof o === 'object' ? Object.entries(o) : [];
-const svg = (d, extra = '') => `<svg viewBox="0 0 24 24" ${extra}>${d}</svg>`;
+const svg = (d, cls = 'ic') => `<svg class="${cls}" viewBox="0 0 24 24" aria-hidden="true">${d}</svg>`;
 const ICON = {
-  back: svg('<path d="M15 18l-6-6 6-6"/>'),
-  close: svg('<path d="M18 6 6 18M6 6l12 12"/>'),
-  chev: svg('<path d="m6 9 6 6 6-6"/>', 'class="chev"'),
-  flame: svg('<path d="M12 22c4 0 7-3 7-7 0-3-2-5.5-3.5-7-.3 2-1.3 3-2.5 3.5C13.5 8 12 4.5 9 2c.5 3-1 5-2.5 6.8C5.6 10 5 12.3 5 15c0 4 3 7 7 7z"/>'),
-  arrow: svg('<path d="M5 12h14M13 6l6 6-6 6"/>', 'class="ar"'),
-  search: svg('<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>'),
-  play: svg('<path d="M11 5 6 9H3v6h3l5 4zM15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13"/>'),
-  stop: svg('<rect x="6" y="6" width="12" height="12" rx="2"/>'),
-  list: svg('<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>'),
-  test: svg('<path d="M9 11l3 3 8-8"/><path d="M20 12v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9"/>'),
-  award: svg('<circle cx="12" cy="9" r="6"/><path d="M8.5 14 7 22l5-3 5 3-1.5-8"/>'),
-  pen: svg('<path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>'),
+  back: svg('<path d="M15 18l-6-6 6-6"/>', ''),
+  close: svg('<path d="M18 6 6 18M6 6l12 12"/>', ''),
+  chev: svg('<path d="m6 9 6 6 6-6"/>', 'chev'),
+  arrow: svg('<path d="M9 6l6 6-6 6"/>', 'ar'),
+  menu: svg('<path d="M4 6h16M4 12h11M4 18h16"/>'),
+  bell: svg('<path d="M18 16V11a6 6 0 1 0-12 0v5l-2 2h16zM10 21h4"/>'),
+  clock: svg('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>'),
+  info: svg('<circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/>'),
+  search: svg('<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>', ''),
+  play: svg('<path d="M11 5 6 9H3v6h3l5 4zM15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13"/>', ''),
+  stop: svg('<rect x="6" y="6" width="12" height="12" rx="2"/>', ''),
+  list: svg('<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>', ''),
+  test: svg('<path d="M9 11l3 3 8-8"/><path d="M20 12v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9"/>', ''),
+  award: svg('<circle cx="12" cy="9" r="6"/><path d="M8.5 14 7 22l5-3 5 3-1.5-8"/>', ''),
+  pen: svg('<path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>', ''),
   plus: svg('<path d="M12 5v14M5 12h14"/>')
 };
 
 /* ───────── Courses ───────── */
 const COURSES = (window.COURSES || []).filter(c => c && c.id && Array.isArray(c.lessons) && Array.isArray(c.units));
 const testMins = n => Math.round(n * MIN_PER_Q + 1);
-for (const c of COURSES) {
+COURSES.forEach((c, ci) => {
+  c.theme = [1, 2, 3, 4].includes(c.theme) ? c.theme : (ci % 4) + 1;     // gradient + tag colour
+  c.short = c.short || c.title.split(/\s+&\s+|\s+/)[0];
   c.lessons.forEach((l, i) => {
     l.index = i;
     l.mins = Math.max(3, Math.round(words([l.intro, ...l.body, ...l.points, l.example, l.myth, l.try || '', ...l.terms.flat()]) / WPM + l.quiz.length * MIN_PER_Q));
@@ -54,9 +59,10 @@ for (const c of COURSES) {
   c.unitLessons = n => c.lessons.filter(l => l.unit === +n);
   c.terms = new Map(); for (const l of c.lessons) for (const [t, d] of l.terms) { const k = t.toLowerCase(); if (!c.terms.has(k)) c.terms.set(k, {k: 't:' + k, t, d, l}); }
   c.totalMins = c.lessons.reduce((a, l) => a + l.mins, 0) + c.units.length * testMins(TEST_Q) + testMins(FINAL_Q);
-}
+});
 const CB = Object.fromEntries(COURSES.map(c => [c.id, c]));
 const P = (c, ...parts) => `#/c/${c.id}${parts.length ? '/' + parts.join('/') : ''}`;
+const tag = (c, text) => `<span class="tag t${c.theme}">${esc(text || c.short)}</span>`;
 function qOf(c, key) {
   let m = /^u(\d+)#(\d+)$/.exec(key);
   if (m) { const u = c.unit(m[1]), q = u && u.scenarios && u.scenarios[+m[2]]; return q && {q, label: `Unit ${m[1]} scenario`}; }
@@ -68,7 +74,7 @@ const validCard = (c, k) => k.startsWith('t:') ? c.terms.has(k.slice(2)) : !!qOf
 
 /* ───────── State ───────── */
 const freshCourse = () => ({done:{}, scores:{}, cards:{}, current:null, tests:{}, certDate:null, notes:{}, stats:{answered:0, correct:0}});
-const fresh = () => ({v:3, courses:{}, last:null, streak:{count:0,last:null}, log:{}, goal:10, goalHit:null, settings:{theme:'auto', size:'m', name:''}});
+const fresh = () => ({v:3, courses:{}, last:null, streak:{count:0,last:null}, log:{}, goal:10, goalHit:null, welcomed:false, settings:{theme:'auto', size:'m', name:''}});
 function sanitizeCourse(c, x) {
   const s = freshCourse();
   if (!x || typeof x !== 'object') return s;
@@ -88,6 +94,7 @@ function sanitizeGlobal(s, x) {
   for (const [k, v] of entries(x.log)) if (isDate(k) && Number.isFinite(v) && v > 0) s.log[k] = Math.min(v, 1440);
   if (GOALS.includes(x.goal)) s.goal = x.goal;
   if (isDate(x.goalHit)) s.goalHit = x.goalHit;
+  if (x.welcomed === true) s.welcomed = true;
   if (x.settings) s.settings = {theme: ['auto','light','dark'].includes(x.settings.theme) ? x.settings.theme : 'auto', size: ['s','m','l'].includes(x.settings.size) ? x.settings.size : 'm', name: typeof x.settings.name === 'string' ? x.settings.name.slice(0, 60) : ''};
   return s;
 }
@@ -99,6 +106,7 @@ function sanitize(x) {
 }
 function fromV2(x) {            // AI Study 2.x: a single AI course at the top level
   const s = sanitizeGlobal(fresh(), x);
+  s.welcomed = false;
   if (CB[AI_ID]) { s.courses[AI_ID] = sanitizeCourse(CB[AI_ID], x); s.last = AI_ID; }
   return s;
 }
@@ -117,7 +125,7 @@ function load() {
     if (v2 || v1) { migrated = true; notice = 'Welcome to Steady. Your AI Foundations progress came with you.'; return v2 ? fromV2(JSON.parse(v2)) : fromV1(JSON.parse(v1)); }
   } catch (e) {
     try { localStorage.setItem(KEY + '-unreadable-' + Date.now(), raw); } catch (_) {}
-    notice = 'Saved progress was unreadable. A copy was kept, and you can restore a backup from Progress.';
+    notice = 'Saved progress was unreadable. A copy was kept, and you can restore a backup in Settings.';
   }
   return fresh();
 }
@@ -140,10 +148,12 @@ const remainingMins = c => c.lessons.filter(l => !cs(c).done[l.id]).reduce((a, l
 const certEarned = c => !!cs(c).certDate && doneCount(c) === c.lessons.length && passed(c, 'final');
 const isDue = (c, k) => { const x = cs(c).cards[k]; return x && x.due <= today(); };
 const dueQs = () => COURSES.flatMap(c => Object.keys(cs(c).cards).filter(k => !k.startsWith('t:') && isDue(c, k)).map(key => ({c, key})));
-const dueTerms = (only) => COURSES.filter(c => !only || c === only).flatMap(c => [...c.terms.values()].filter(x => cs(c).done[x.l.id] && (!cs(c).cards[x.k] || isDue(c, x.k))).map(x => ({c, key: x.k})));
+const dueTerms = () => COURSES.flatMap(c => [...c.terms.values()].filter(x => cs(c).done[x.l.id] && (!cs(c).cards[x.k] || isDue(c, x.k))).map(x => ({c, key: x.k})));
 const streakNow = () => { const t = today(), s = state.streak; return s.last === t || s.last === addDays(t, -1) ? s.count : 0; };
 const minsOn = d => state.log[d] || 0;
 const totalMins = () => Object.values(state.log).reduce((a, b) => a + b, 0);
+const firstName = () => (state.settings.name.trim().split(/\s+/)[0] || '');
+const initial = () => (state.settings.name.trim()[0] || 'S').toUpperCase();
 function mastery(c, id) {
   if (!cs(c).done[id]) return null;
   const boxes = c.byId[id].quiz.map((_, n) => (cs(c).cards[`${id}#${n}`] || {box: 0}).box);
@@ -179,82 +189,99 @@ function toast(msg, action, onAction) {
 }
 let navigated = false;
 function goBack(fallback) { if (navigated && history.length > 1) history.back(); else location.replace(fallback); }
-function updateBadge() { const n = dueQs().length + dueTerms().length, b = $('#dueBadge'); b.hidden = !n; b.textContent = n > 99 ? '99+' : n; }
-function setTab(tab) {
-  document.body.classList.toggle('full', !tab);
+const dueCount = () => dueQs().length + dueTerms().length;
+function setTab(tab, plum) {
+  document.body.classList.toggle('full', tab === null);
+  document.body.classList.toggle('plum', !!plum); document.documentElement.classList.toggle('plum', !!plum);
   document.querySelectorAll('.tabs a').forEach(a => a.dataset.tab === tab ? a.setAttribute('aria-current', 'page') : a.removeAttribute('aria-current'));
-  updateBadge();
+}
+function header() {
+  const n = dueCount(), cert = COURSES.some(certEarned);
+  return `<header class="hdr"><a class="ib" href="#/settings" aria-label="Settings">${ICON.menu}</a><span class="sp"></span>
+    <a class="ib" href="#/review" aria-label="Review${n ? `, ${n} due` : ''}">${ICON.bell}${n ? `<b class="dot">${n > 99 ? '99+' : n}</b>` : ''}</a>
+    <a class="avatar" href="#/you" aria-label="Your progress">${esc(initial())}${cert ? '<i class="vbadge"></i>' : ''}</a></header>`;
 }
 const topbar = (label, extra = '') => `<div class="topbar"><button class="iconbtn" id="back" aria-label="Back">${ICON.back}</button><span class="label">${label}</span>${extra || '<span class="iconbtn"></span>'}</div>`;
 const progressTop = (pct, count) => `<div class="topbar"><button class="iconbtn" id="back" aria-label="Close">${ICON.close}</button><div class="bar"><i style="width:${pct}%"></i></div><span class="count">${count}</span></div>`;
-const ring = (p, size = 56, sw = 6) => { const r = (size - sw) / 2, ci = 2 * Math.PI * r; return `<svg class="ring" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}"><circle cx="${size/2}" cy="${size/2}" r="${r}" stroke-width="${sw}" class="ring-bg"/><circle cx="${size/2}" cy="${size/2}" r="${r}" stroke-width="${sw}" class="ring-fg" stroke-dasharray="${ci.toFixed(2)}" stroke-dashoffset="${(ci * (1 - Math.min(p, 1))).toFixed(2)}" transform="rotate(-90 ${size/2} ${size/2})"/></svg>`; };
-const streakPill = () => { const st = streakNow(); return `<span class="pill ${st ? 'hot' : ''}" title="Day streak">${ICON.flame}${plural(st, 'day')}</span>`; };
+
+/* ───────── Welcome (first run) ───────── */
+const WELCOME_ART = `<svg class="art" viewBox="0 0 300 240" role="img" aria-label="Stacked course cards with a graduation cap">
+  <defs><linearGradient id="w1" x1="0" y1="0" x2="1" y2="1"><stop offset=".17" stop-color="#548ad8"/><stop offset=".85" stop-color="#8a4bd3"/></linearGradient>
+  <linearGradient id="w2" x1="0" y1="0" x2="1" y2="1"><stop offset=".17" stop-color="#f33e62"/><stop offset=".85" stop-color="#f79334"/></linearGradient>
+  <linearGradient id="w3" x1="0" y1="0" x2="1" y2="1"><stop offset=".17" stop-color="#893e9c"/><stop offset=".85" stop-color="#f82b73"/></linearGradient></defs>
+  <circle cx="150" cy="120" r="104" fill="#fff" opacity=".06"/><circle cx="150" cy="120" r="72" fill="#fff" opacity=".05"/>
+  <g transform="rotate(-12 150 150)"><rect x="54" y="118" width="190" height="70" rx="16" fill="url(#w3)"/></g>
+  <g transform="rotate(-4 150 130)"><rect x="58" y="96" width="186" height="70" rx="16" fill="url(#w2)"/><path d="M90 120l14-12M120 140l20-17M170 118l12-10M200 146l18-15" stroke="#fff" stroke-opacity=".45" stroke-width="5" stroke-linecap="round"/></g>
+  <g transform="rotate(5 150 110)"><rect x="62" y="74" width="182" height="70" rx="16" fill="url(#w1)"/><circle cx="98" cy="136" r="18" fill="none" stroke="#fff" stroke-opacity=".35" stroke-width="2"/><circle cx="98" cy="136" r="30" fill="none" stroke="#fff" stroke-opacity=".25" stroke-width="2"/><rect x="150" y="98" width="72" height="8" rx="4" fill="#fff" opacity=".9"/><rect x="170" y="114" width="52" height="6" rx="3" fill="#fff" opacity=".6"/></g>
+  <path d="M150 22 214 50 150 78 86 50z" fill="#fff"/><path d="M118 64v18c0 9 14 16 32 16s32-7 32-16V64l-32 14z" fill="#fff" opacity=".85"/><path d="M206 54v26" stroke="#fff" stroke-width="4" stroke-linecap="round"/><circle cx="206" cy="84" r="6" fill="#f79334"/>
+  <path d="M42 70l4 10 10 4-10 4-4 10-4-10-10-4 10-4z" fill="#f79334"/><path d="M256 30l3 7 7 3-7 3-3 7-3-7-7-3 7-3z" fill="#fff" opacity=".8"/><circle cx="252" cy="196" r="5" fill="#f82b73"/><circle cx="40" cy="190" r="4" fill="#548ad8"/>
+</svg>`;
+function renderWelcome() {
+  setTab(null, true);
+  view.innerHTML = `<div class="plumbg"></div><div class="welcome fade">${WELCOME_ART}
+    <h1>Learn anything,<br>a little every day</h1>
+    <p>Short lessons, quick quizzes and smart review, all offline. Pick a course and keep a steady streak.</p>
+    <label class="field"><span>What should we call you?</span><input id="wname" value="${esc(state.settings.name)}" maxlength="60" placeholder="Your name" autocomplete="given-name"></label>
+    <div class="stack"><button class="btn white" id="start">Let’s start ${ICON.arrow}</button></div></div>`;
+  $('#start').onclick = () => { state.settings.name = $('#wname').value.trim().slice(0, 60); state.welcomed = true; save(); location.replace('#/home'); };
+}
 
 /* ───────── Home ───────── */
-function todayCard() {
-  const t = today(), m = minsOn(t), days = [];
-  for (let i = 6; i >= 0; i--) { const d = addDays(t, -i), v = minsOn(d);
-    days.push(`<span class="day ${v >= state.goal ? 'hit' : v > 0 ? 'some' : ''} ${i === 0 ? 'now' : ''}"><i></i>${fmtDate(d, {weekday: 'narrow'})}</span>`); }
-  return `<a class="card today" href="#/you"><div class="ringwrap">${ring(m / state.goal)}<b>${Math.floor(m)}</b></div>
-    <div class="tt"><b>${m >= state.goal ? 'Daily goal reached ✓' : 'Today’s goal'}</b><small>${Math.floor(m)} of ${state.goal} min · last 7 days</small><div class="week">${days.join('')}</div></div></a>`;
-}
-function courseCard(c) {
-  const on = started(c), n = doneCount(c), pct = Math.round(n / c.lessons.length * 100), done = certEarned(c);
-  return `<a class="ccard" href="${P(c)}"><span class="cicon">${esc(c.icon || '📘')}</span><span class="t">
-    <b>${esc(c.title)}</b><small>${esc(c.subtitle || '')}</small>
-    ${on ? `<span class="cprog"><span class="bar"><i style="width:${pct}%"></i></span><em>${done ? 'Completed ✓' : `${n}/${c.lessons.length}`}</em></span>`
-         : `<span class="cmeta">${c.lessons.length} lessons · ${c.units.length} units · about ${fmtMin(c.totalMins)}</span>`}
-    </span>${ICON.arrow}</a>`;
+function upNext() {
+  const items = [], mine = COURSES.filter(started);
+  const focus = [CB[state.last], ...mine].find(c => c && started(c) && continueLesson(c));
+  if (focus) { const l = continueLesson(focus); items.push({href: P(focus, 'lesson', l.id), title: l.title, c: focus, time: `${l.mins} min`}); }
+  const dq = dueQs(), dt = dueTerms();
+  if (dq.length) items.push({href: '#/review/due', title: 'Daily review', tagHtml: '<span class="tag tr">Review</span>', time: plural(Math.min(dq.length, REVIEW_MAX), 'question')});
+  if (dt.length) items.push({href: '#/cards', title: 'Key-term flashcards', tagHtml: '<span class="tag tg">Flashcards</span>', time: `${Math.min(dt.length, CARDS_MAX)} cards`});
+  for (const c of mine) for (const u of c.units) if (items.length < 4 && c.unitLessons(u.n).every(l => cs(c).done[l.id]) && !passed(c, u.n)) items.push({href: P(c, 'test', u.n), title: `Unit ${u.n} test`, c, time: `${testMins(TEST_Q)} min`});
+  for (const c of mine) if (items.length < 4 && c !== focus && continueLesson(c)) { const l = continueLesson(c); items.push({href: P(c, 'lesson', l.id), title: l.title, c, time: `${l.mins} min`}); }
+  for (const c of COURSES) if (items.length < 4 && !started(c)) items.push({href: P(c), title: `Start ${c.title}`, c, time: fmtMin(c.totalMins), calm: true});
+  return {items: items.slice(0, 4), focus};
 }
 function renderHome() {
   setTab('home');
-  const h = new Date().getHours(), hello = h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening';
-  const mine = COURSES.filter(started), others = COURSES.filter(c => !started(c));
-  const focus = [CB[state.last], ...mine].find(c => c && started(c) && continueLesson(c));
-  const dq = dueQs().length, dt = dueTerms().length;
-  let hero = '';
-  if (focus) {
-    const l = continueLesson(focus);
-    hero = `<a class="hero" href="${P(focus, 'lesson', l.id)}"><p class="eyebrow">Continue · ${esc(focus.title)}</p>
-      <h2>${esc(l.title)}</h2><p>${esc(l.intro)}</p>
-      <div class="row"><span class="meta">${l.mins} min · Lesson ${l.index + 1} of ${focus.lessons.length}</span><span class="go">Continue ${ICON.arrow}</span></div></a>`;
-  }
-  view.innerHTML = `<div class="fade">
-    <div class="head"><div><p class="eyebrow">Steady</p><h1>${hello}</h1></div>${streakPill()}</div>
-    ${hero || `<div class="card welcome"><h2>What do you want to learn?</h2><p>Pick a course below. Every course works the same way: short lessons, quick quizzes, spaced review, unit tests and a certificate.</p></div>`}
-    ${todayCard()}
-    ${dq + dt ? `<a class="card rowcard" href="#/review"><span><b>${[dq && plural(dq, 'question'), dt && plural(dt, 'flashcard')].filter(Boolean).join(' · ')} to review</b><br><small>Spaced repetition keeps it in long-term memory</small></span>${ICON.arrow}</a>` : ''}
-    ${mine.length ? `<h2 class="section-title">My courses</h2>${mine.map(courseCard).join('')}` : ''}
-    ${others.length ? `<h2 class="section-title">${mine.length ? 'Start something new' : 'Courses'}</h2>${others.map(courseCard).join('')}` : ''}
-    <div class="card addcourse"><span class="cicon">${ICON.plus}</span><div><b>Want to learn another subject?</b><p>New courses can be added in the same format. Ask Claude: <i>“Add a Steady course on …”</i></p></div></div>
+  const name = firstName(), dq = dueQs().length, dt = dueTerms().length, m = Math.floor(minsOn(today())), st = streakNow();
+  const {items, focus} = upNext();
+  const line = dq + dt ? `You have <b>${plural(dq + dt, 'review')} due</b> today` : COURSES.some(started) ? `You’re <b class="ok">all caught up</b> on reviews` : 'Pick a course and start your first lesson';
+  const goalTxt = m >= state.goal ? `Goal reached!${st ? ` You’re on a ${st}-day streak.` : ''}` : `Reach ${state.goal} today${st ? ` to grow your ${st}-day streak` : ' to start a streak'}.`;
+  const heroHref = focus ? P(focus, 'lesson', continueLesson(focus).id) : (COURSES[0] ? P(COURSES[0]) : '#/courses');
+  view.innerHTML = header() + `<div class="fade">
+    <div class="hi"><h1>Hi${name ? ' ' + esc(name) : ''},</h1><p>${line}</p></div>
+    <a class="hero" href="${heroHref}"><div class="hx"><div class="num"><b>${m}</b><span>min today</span></div><p>${goalTxt}</p></div><span class="go">${focus ? 'Continue' : 'Start learning'}</span></a>
+    ${items.length ? `<h2 class="sec">Up next ${ICON.info}</h2>
+      <div class="grid2">${items.map(it => `<a class="tcard" href="${it.href}"><b>${esc(it.title)}</b><span class="tmeta">${it.tagHtml || tag(it.c)}<span class="time ${it.calm ? 'calm' : ''}">${ICON.clock}${esc(it.time)}</span></span></a>`).join('')}</div>` : ''}
+    <h2 class="sec">Courses</h2>
+    <div class="grid2">${COURSES.map(c => `<a class="gbtn cg${c.theme}" href="${P(c)}">${esc(c.title)}</a>`).join('')}</div>
+    <div class="hint">${ICON.plus}<div><b>Want to learn another subject?</b>New courses can be added in the same format. Ask Claude: <i>“Add a Steady course on …”</i></div></div>
+  </div>`;
+}
+
+/* ───────── Courses tab (plum library) ───────── */
+function renderCourses() {
+  setTab('courses', true);
+  view.innerHTML = `<div class="plumbg"></div><div class="on-plum">${header()}</div><div class="fade">
+    <h1 class="plum-title">Courses</h1><p class="plum-sub">${plural(COURSES.length, 'course')} · ${plural(COURSES.reduce((a, c) => a + c.lessons.length, 0), 'lesson')}</p>
+    <div class="stack-cards">${COURSES.map(c => { const n = doneCount(c), pct = Math.round(n / c.lessons.length * 100);
+      return `<a class="scard cg${c.theme}" href="${P(c)}"><b>${esc(c.title)}</b><small>${certEarned(c) ? 'Completed ✓' : started(c) ? `${n}/${c.lessons.length} lessons` : `${c.lessons.length} lessons · ${fmtMin(c.totalMins)}`}</small>${started(c) ? `<span class="sbar"><i style="width:${pct}%"></i></span>` : ''}</a>`; }).join('')}</div>
+    <p class="plum-note">Every course works the same way: ~4-minute lessons, quick quizzes, spaced review, unit tests and a certificate. To add a subject, ask Claude: “Add a Steady course on …”.</p>
   </div>`;
 }
 
 /* ───────── Course overview ───────── */
 function renderCourse(c) {
-  setTab('home');
+  setTab('courses');
   const s = cs(c), next = continueLesson(c), n = doneCount(c), pct = Math.round(n / c.lessons.length * 100);
-  let hero;
-  if (next) {
-    const begun = n > 0 || s.current;
-    hero = `<a class="hero" href="${P(c, 'lesson', next.id)}"><p class="eyebrow">${begun ? 'Continue' : 'Start here'} · Unit ${next.unit}</p>
-      <h2>${esc(next.title)}</h2><p>${esc(next.intro)}</p>
-      <div class="row"><span class="meta">${next.mins} min · Lesson ${next.index + 1} of ${c.lessons.length}</span><span class="go">${begun ? 'Continue' : 'Start'} ${ICON.arrow}</span></div></a>`;
-  } else if (!certEarned(c)) {
-    hero = `<a class="hero" href="${P(c, 'final')}"><p class="eyebrow">All lessons complete</p><h2>Take the final exam</h2>
-      <p>${FINAL_Q} questions across the whole course. Score ${PASS}% or more to earn your certificate.</p>
-      <div class="row"><span class="meta">About ${testMins(FINAL_Q)} min</span><span class="go">Start ${ICON.arrow}</span></div></a>`;
-  } else {
-    hero = `<a class="hero" href="${P(c, 'certificate')}"><p class="eyebrow">Course complete</p><h2>You earned your certificate</h2>
-      <p>Keep it fresh with a few spaced-review questions each day.</p>
-      <div class="row"><span class="meta">Final exam ${s.tests.final}%</span><span class="go">View ${ICON.arrow}</span></div></a>`;
-  }
+  let nx, href, btn;
+  if (next) { nx = `<small>${n || s.current ? 'Continue' : 'Start here'} · Unit ${next.unit}</small><b>${esc(next.title)}</b>`; href = P(c, 'lesson', next.id); btn = n || s.current ? 'Continue' : 'Start'; }
+  else if (!certEarned(c)) { nx = `<small>All lessons complete</small><b>Final exam · ${FINAL_Q} questions</b>`; href = P(c, 'final'); btn = 'Take exam'; }
+  else { nx = `<small>Course complete</small><b>Your certificate</b>`; href = P(c, 'certificate'); btn = 'View'; }
   const openUnit = next ? next.unit : 0;
   const units = c.units.map(u => {
     const ls = c.unitLessons(u.n), d = ls.filter(l => s.done[l.id]).length, mins = ls.reduce((a, l) => a + l.mins, 0) + testMins(TEST_Q);
     const best = s.tests[u.n], complete = d === ls.length && passed(c, u.n);
     const rows = ls.map(l => `<li><a class="lrow ${s.done[l.id] ? 'done' : ''} ${next && l.id === next.id ? 'next' : ''}" href="${P(c, 'lesson', l.id)}">
-      <span class="dot"></span><span class="lt">${esc(l.title)}</span><span class="lm">${l.mins} min</span></a></li>`).join('');
+      <span class="dot2"></span><span class="lt">${esc(l.title)}</span><span class="lm">${l.mins} min</span></a></li>`).join('');
     return `<details class="unit ${complete ? 'complete' : ''}" ${u.n === openUnit ? 'open' : ''}>
       <summary><span class="unum">${complete ? '✓' : u.n}</span><span class="t"><b>${esc(u.title)}</b><small>${d} of ${ls.length} lessons · ${fmtMin(mins)}</small></span>${ICON.chev}</summary>
       ${u.objectives ? `<div class="obj"><p>You’ll be able to</p><ul>${u.objectives.map(o => `<li>${esc(o)}</li>`).join('')}</ul></div>` : ''}
@@ -263,18 +290,18 @@ function renderCourse(c) {
         <li><a class="lrow extra" href="${P(c, 'test', u.n)}"><span class="ico ${passed(c, u.n) ? 'ok' : ''}">${ICON.test}</span><span class="lt">Unit test</span><span class="lm">${best != null ? `<span class="score-chip ${passed(c, u.n) ? 'ok' : ''}">${best}%</span>` : `${TEST_Q} questions`}</span></a></li>
       </ol></details>`;
   }).join('');
-  const finalRow = `<a class="card finalcard" href="${certEarned(c) ? P(c, 'certificate') : P(c, 'final')}"><span class="ico big ${passed(c, 'final') ? 'ok' : ''}">${ICON.award}</span>
-    <span class="t"><b>${certEarned(c) ? 'Your certificate' : 'Final exam & certificate'}</b><small>${certEarned(c) ? `Earned ${fmtDate(s.certDate, {day: 'numeric', month: 'short', year: 'numeric'})}` : `${FINAL_Q} questions · pass mark ${PASS}%${s.tests.final != null ? ` · best ${s.tests.final}%` : ''}`}</small></span>${ICON.arrow}</a>`;
-  view.innerHTML = `<div class="fade">
-    <a class="crumb" href="#/home">${ICON.back}All courses</a>
-    <div class="chead"><span class="cicon big">${esc(c.icon || '📘')}</span><div><h1>${esc(c.title)}</h1><p class="sub">${c.lessons.length} lessons · ${c.units.length} units · about ${fmtMin(c.totalMins)}</p></div></div>
+  view.innerHTML = topbar(esc(c.title)) + `<div class="fade">
+    <div class="chero cg${c.theme}"><h1>${esc(c.title)}</h1><p class="stats-line">${c.lessons.length} lessons · ${c.units.length} units · about ${fmtMin(c.totalMins)}</p>
+      <a class="row" href="${href}"><span class="next">${nx}</span><span class="go">${btn}</span></a></div>
     <p class="about">${esc(c.about || c.subtitle || '')}</p>
-    ${hero}
     <div class="progress"><div class="bar"><i style="width:${pct}%"></i></div><span>${n}/${c.lessons.length} lessons</span></div>
     <p class="remain">${remainingMins(c) ? `About ${fmtMin(remainingMins(c))} of study left` : 'Course finished'}</p>
-    <h2 class="section-title">${c.units.length} units</h2>${units}${finalRow}
+    <h2 class="sec">${c.units.length} units</h2>${units}
+    <a class="finalcard" href="${certEarned(c) ? P(c, 'certificate') : P(c, 'final')}"><span class="ico big ${passed(c, 'final') ? 'ok' : ''}">${ICON.award}</span>
+      <span class="t"><b>${certEarned(c) ? 'Your certificate' : 'Final exam & certificate'}</b><small>${certEarned(c) ? `Earned ${fmtDate(s.certDate, {day: 'numeric', month: 'short', year: 'numeric'})}` : `${FINAL_Q} questions · pass mark ${PASS}%${s.tests.final != null ? ` · best ${s.tests.final}%` : ''}`}</small></span>${ICON.arrow}</a>
     ${c.disclaimer ? `<p class="disclaimer">${esc(c.disclaimer)}</p>` : ''}
   </div>`;
+  $('#back').onclick = () => goBack('#/courses');
 }
 
 /* ───────── Lesson ───────── */
@@ -304,19 +331,19 @@ function renderLesson(c, id) {
   view.innerHTML = topbar(`Lesson ${l.index + 1} of ${c.lessons.length}`, canSpeak ? `<button class="iconbtn" id="listen" aria-label="Listen to lesson">${ICON.play}</button>` : '') +
   `<div class="readbar"><i id="readp"></i></div>
   <article class="lesson fade">
-    <p class="eyebrow">${esc(c.title)} · Unit ${u.n}</p>
+    <p class="eyebrow">Unit ${u.n} · ${esc(u.title)}</p>
     <h1>${esc(l.title)}</h1>
     <p class="lead">${esc(l.intro)}</p>
-    <p class="meta">${l.mins} min · ${l.quiz.length} questions${ms ? ` · <span class="mchip m-${ms.toLowerCase()}">${ms}</span>` : ''}</p>
+    <p class="meta">${tag(c)}<span class="time calm">${ICON.clock}${l.mins} min</span><span>· ${l.quiz.length} questions</span>${ms ? `<span class="tag ${ms === 'Mastered' ? 'tg' : ms === 'Familiar' ? 't1' : 't2'}">${ms}</span>` : ''}</p>
     ${l.body.map(p => `<p class="body">${esc(p)}</p>`).join('')}
     <div class="box key"><h3>Key points</h3><ul>${l.points.map(p => `<li>${esc(p)}</li>`).join('')}</ul></div>
     <div class="box ex"><h3>Example</h3><p>${esc(l.example)}</p></div>
     <div class="box myth"><h3>Common misconception</h3><p><b>Myth:</b> ${esc(myth)}</p>${reality ? `<p><b>Reality:</b> ${esc(reality[0].toUpperCase() + reality.slice(1))}</p>` : ''}</div>
     ${l.try ? `<div class="box try"><h3>${ICON.pen}Try it</h3><p>${esc(l.try)}</p></div>` : ''}
     ${l.deeper && l.deeper.length ? `<details class="deeper"><summary><span>Go deeper <small>· +${l.deepMins} min</small></span>${ICON.chev}</summary><div class="in">${l.deeper.map(p => `<p class="body">${esc(p)}</p>`).join('')}</div></details>` : ''}
-    <h2 class="section-title" style="margin-left:0">Key terms</h2>
+    <h2 class="h2">Key terms</h2>
     <dl class="terms">${l.terms.map(([t, d]) => `<div><dt>${esc(t)}</dt><dd>${esc(d)}</dd></div>`).join('')}</dl>
-    <h2 class="section-title" style="margin-left:0">My notes</h2>
+    <h2 class="h2">My notes</h2>
     <textarea id="note" class="note" rows="3" placeholder="A thought, a question, or how this applies to your life…">${esc(s.notes[id] || '')}</textarea>
     <div class="stack"><a class="btn primary" href="${P(c, 'quiz', l.id)}">${s.done[id] ? 'Retake the quiz' : 'Take the quiz'} ${ICON.arrow}</a></div>
     <nav class="pager">${prev ? `<a href="${P(c, 'lesson', prev.id)}">‹ Previous<b>${esc(prev.title)}</b></a>` : ''}${next ? `<a href="${P(c, 'lesson', next.id)}">Next ›<b>${esc(next.title)}</b></a>` : ''}</nav>
@@ -335,11 +362,11 @@ function renderUnit(c, n) {
   setTab(null);
   const ls = c.unitLessons(n), terms = new Set(ls.flatMap(l => l.terms.map(([t]) => t.toLowerCase()))).size;
   view.innerHTML = topbar(`Unit ${u.n} recap`) + `<article class="lesson fade">
-    <p class="eyebrow">${esc(c.title)} · Unit ${u.n}</p><h1>${esc(u.title)}</h1><p class="lead">${esc(u.blurb || '')}</p>
+    <p class="meta">${tag(c)}</p><h1>${esc(u.title)}</h1><p class="lead">${esc(u.blurb || '')}</p>
     ${u.objectives ? `<div class="box key"><h3>You’ll be able to</h3><ul>${u.objectives.map(o => `<li>${esc(o)}</li>`).join('')}</ul></div>` : ''}
     <div class="stack two"><a class="btn" href="${P(c, 'cards', u.n)}">Flashcards · ${terms}</a><a class="btn primary" href="${P(c, 'test', u.n)}">Unit test</a></div>
-    <h2 class="section-title" style="margin-left:0">Cheat sheet</h2>
-    ${ls.map(l => `<div class="recap"><a href="${P(c, 'lesson', l.id)}"><b>${esc(l.title)}</b>${cs(c).done[l.id] ? '<span class="tick">✓</span>' : ''}</a><ul>${l.points.map(p => `<li>${esc(p)}</li>`).join('')}</ul></div>`).join('')}
+    <h2 class="h2">Cheat sheet</h2>
+    ${ls.map(l => `<div class="box"><h3><a href="${P(c, 'lesson', l.id)}">${esc(l.title)}</a>${cs(c).done[l.id] ? ' <span class="tag tg">Done</span>' : ''}</h3><ul>${l.points.map(p => `<li>${esc(p)}</li>`).join('')}</ul></div>`).join('')}
   </article>`;
   $('#back').onclick = () => goBack(P(c));
 }
@@ -364,7 +391,7 @@ function renderQuiz() {
   const ok = s.picked === it.ans, multi = s.kind === 'due' || s.kind === 'mix';
   view.innerHTML = progressTop(Math.round((s.i + (answered ? 1 : 0)) / total * 100), `${s.i + 1}/${total}`) + `
   <div class="q fade">
-    <p class="src">${esc(s.kind === 'lesson' ? TITLES.lesson : `${TITLES[s.kind]} · ${multi ? it.c.title + ' · ' : ''}${it.label}`)}</p>
+    <p class="src"><span class="tag tr">${TITLES[s.kind]}</span>${tag(it.c)}${s.kind !== 'lesson' ? `<span class="tag t1" style="background:var(--surface-2);color:var(--muted)">${esc(it.label)}</span>` : ''}</p>
     <h2>${esc(it.q)}</h2>
     <div class="opts">${opts}</div>
     ${answered ? `<div class="why ${ok ? 'ok' : 'no'}"><b>${ok ? 'Correct' : 'Not quite'}</b>${esc(it.why)}</div>
@@ -447,6 +474,7 @@ function testIntro(c, kind, n) {
   const ls = isFinal ? c.lessons : c.unitLessons(n), notDone = ls.filter(l => !cs(c).done[l.id]).length;
   view.innerHTML = topbar(isFinal ? 'Final exam' : `Unit ${n} test`) + `<div class="fade intro">
     <span class="ico huge">${isFinal ? ICON.award : ICON.test}</span>
+    <p class="meta" style="justify-content:center;display:flex">${tag(c)}</p>
     <h1>${isFinal ? `${esc(c.title)} final exam` : esc(u.title)}</h1>
     <p class="sub">${isFinal ? `Covers all ${c.units.length} units, mixing lesson questions with real-world scenarios.` : 'Mixes this unit’s lesson questions with real-world scenarios you haven’t seen before.'}</p>
     <div class="facts"><div><b>${count}</b><span>questions</span></div><div><b>~${testMins(count)}</b><span>minutes</span></div><div><b>${PASS}%</b><span>to pass</span></div></div>
@@ -472,7 +500,7 @@ function routeTest(c, kind, n) {
 
 /* ───────── Review & flashcards (all courses) ───────── */
 function renderReview() {
-  setTab('review');
+  setTab('');
   session = null;
   const dq = dueQs(), dt = dueTerms();
   const qcards = COURSES.flatMap(c => Object.entries(cs(c).cards).filter(([k]) => !k.startsWith('t:')).map(([, x]) => x));
@@ -481,17 +509,17 @@ function renderReview() {
   let main;
   if (!learned && !qcards.length) {
     main = `<div class="card empty"><h2>Nothing to review yet</h2><p>Finish a lesson and its questions and key terms appear here on a spaced schedule: after 1 day, 3 days, a week, and so on.</p>
-      <div class="stack"><a class="btn primary" href="#/home">Choose a course</a></div></div>`;
+      <div class="stack"><a class="btn primary" href="#/courses">Choose a course</a></div></div>`;
   } else {
     main = `<div class="revgrid">
-      <a class="card rev ${dq.length ? '' : 'idle'}" href="${dq.length ? '#/review/due' : '#/review'}"><span class="big">${dq.length}</span><b>Questions</b><small>${dq.length ? `due now${dq.length > REVIEW_MAX ? ` · ${REVIEW_MAX} per round` : ''}` : 'all caught up'}</small></a>
-      <a class="card rev ${dt.length ? '' : 'idle'}" href="${dt.length ? '#/cards' : '#/review'}"><span class="big">${dt.length}</span><b>Flashcards</b><small>${dt.length ? 'key terms due' : 'all caught up'}</small></a></div>
+      <a class="rev cg1 ${dq.length ? '' : 'idle'}" href="${dq.length ? '#/review/due' : '#/review'}"><span class="big">${dq.length}</span><b>Questions</b><small>${dq.length ? `due now${dq.length > REVIEW_MAX ? ` · ${REVIEW_MAX} per round` : ''}` : 'all caught up'}</small></a>
+      <a class="rev cg2 ${dt.length ? '' : 'idle'}" href="${dt.length ? '#/cards' : '#/review'}"><span class="big">${dt.length}</span><b>Flashcards</b><small>${dt.length ? 'key terms due' : 'all caught up'}</small></a></div>
       ${!dq.length && !dt.length && upcoming ? `<p class="sub center">Next review: ${fmtDate(upcoming, {weekday: 'long', day: 'numeric', month: 'short'})}</p>` : ''}`;
   }
-  view.innerHTML = `<div class="fade"><div class="head"><div><p class="eyebrow">Spaced repetition · all courses</p><h1>Review</h1></div></div>
-    ${main}
-    ${qcards.length ? `<div class="stats" style="margin-top:12px"><div class="stat"><b>${qcards.length - mastered}</b><span>questions learning</span></div><div class="stat"><b>${mastered}</b><span>questions mastered</span></div></div>` : ''}
-    ${learned ? `<h2 class="section-title">Extra practice</h2><div class="stack" style="margin-top:0"><a class="btn" href="#/review/mix">10 mixed questions from finished lessons</a></div>` : ''}
+  view.innerHTML = header() + `<div class="fade"><div class="hi"><h1>Review</h1><p>Spaced repetition across all your courses</p></div>
+    <div style="height:22px"></div>${main}
+    ${qcards.length ? `<div class="stats" style="margin-top:10px"><div class="stat"><b>${qcards.length - mastered}</b><span>questions learning</span></div><div class="stat"><b>${mastered}</b><span>questions mastered</span></div></div>` : ''}
+    ${learned ? `<h2 class="sec">Extra practice</h2><a class="rowlink" href="#/review/mix"><span>10 mixed questions<small>From lessons you’ve finished, across courses</small></span>${ICON.arrow}</a>` : ''}
     <p class="foot">Testing yourself, and spacing it out over days, are the two best-proven ways to remember what you learn.</p></div>`;
 }
 function routeReviewSession(mode) {
@@ -508,8 +536,7 @@ let deck = null;
 function routeCards(c, n) {
   const r = location.hash;
   if (!deck || deck.route !== r) {
-    const refs = c ? [...new Set(c.unitLessons(n).flatMap(l => l.terms.map(([t]) => t.toLowerCase())))].map(k => ({c, key: 't:' + k}))
-      : dueTerms().slice(0, 9999);
+    const refs = c ? [...new Set(c.unitLessons(n).flatMap(l => l.terms.map(([t]) => t.toLowerCase())))].map(k => ({c, key: 't:' + k})) : dueTerms();
     if (!refs.length) return location.replace(c ? P(c, 'unit', n) : '#/review');
     deck = {route: r, refs: c ? shuffle(refs) : shuffle(refs).slice(0, CARDS_MAX), i: 0, flipped: false, got: 0, back: c ? P(c, 'unit', n) : '#/review'};
   }
@@ -527,7 +554,7 @@ function renderCard() {
   const {c, key} = d.refs[d.i], term = c.terms.get(key.slice(2));
   view.innerHTML = progressTop(d.i / d.refs.length * 100, `${d.i + 1}/${d.refs.length}`) + `
     <div class="fade"><button class="flash ${d.flipped ? 'flipped' : ''}" id="flip" aria-live="polite">
-      <small>${esc(c.title)} · ${esc(term.l.title)}</small><b>${esc(term.t)}</b>${d.flipped ? `<p>${esc(term.d)}</p>` : '<span class="hint">Say the definition to yourself, then tap</span>'}</button>
+      <small>${tag(c)}</small><b>${esc(term.t)}</b>${d.flipped ? `<p>${esc(term.d)}</p>` : '<span class="hint2">Say the definition to yourself, then tap</span>'}</button>
     ${d.flipped ? `<div class="stack two"><button class="btn" id="again">Still learning</button><button class="btn primary" id="got">Got it</button></div>` : `<div class="stack"><button class="btn primary" id="show">Show answer</button></div>`}</div>`;
   $('#back').onclick = () => goBack(d.back);
   const flip = () => { if (!d.flipped) { d.flipped = true; renderCard(); } };
@@ -541,62 +568,89 @@ let gQuery = '';
 function renderSearch() {
   setTab('search');
   const all = COURSES.flatMap(c => [...c.terms.values()].map(x => ({...x, c}))).sort((a, b) => a.t.localeCompare(b.t, 'en', {sensitivity: 'base'}));
-  const many = COURSES.length > 1;
-  view.innerHTML = `<div class="fade"><div class="head"><div><p class="eyebrow">${all.length} terms · ${COURSES.reduce((a, c) => a + c.lessons.length, 0)} lessons</p><h1>Search</h1></div></div>
-    <label class="search">${ICON.search}<input id="q" type="search" placeholder="Search lessons and key terms" value="${esc(gQuery)}" autocomplete="off" enterkeyhint="search" aria-label="Search"></label>
+  view.innerHTML = header() + `<div class="fade">
+    <p class="prompt">Search every lesson and key term across your courses, or jump straight into a course.</p>
+    <label class="search"><input id="q" type="search" placeholder="Type a topic or term" value="${esc(gQuery)}" autocomplete="off" enterkeyhint="search" aria-label="Search">${ICON.search}</label>
+    <div id="courses-block"><h2 class="sec" style="margin-top:0">Courses</h2>
+      <div class="grid2">${COURSES.map(c => `<a class="gbtn cg${c.theme}" href="${P(c)}">${esc(c.title)}</a>`).join('')}</div></div>
     <div id="gl"></div></div>`;
   const draw = () => {
     const q = gQuery.trim().toLowerCase();
+    $('#courses-block').hidden = !!q;
     const items = q ? all.filter(g => (g.t + ' ' + g.d).toLowerCase().includes(q)) : all;
     const lessons = q ? COURSES.flatMap(c => c.lessons.filter(l => [l.title, l.intro, ...l.body, ...l.points].join(' ').toLowerCase().includes(q)).map(l => ({c, l}))).slice(0, 8) : [];
-    let last = '', html = lessons.length ? `<p class="letter">Lessons</p><ul class="gl">${lessons.map(({c, l}) => `<li><a class="lhit" href="${P(c, 'lesson', l.id)}"><b>${esc(l.title)}</b><span>${esc(c.title)} · ${l.mins} min ›</span></a></li>`).join('')}</ul>` : '';
-    if (q && items.length) html += '<p class="letter">Key terms</p><ul class="gl">';
+    let last = '', html = lessons.length ? `<h2 class="sec">Lessons</h2><ul class="gl">${lessons.map(({c, l}) => `<li><a class="lhit" href="${P(c, 'lesson', l.id)}"><span><b>${esc(l.title)}</b><span>${esc(c.title)} · ${l.mins} min</span></span>${ICON.arrow}</a></li>`).join('')}</ul>` : '';
+    html += `<h2 class="sec">${q ? 'Key terms' : 'Glossary · ' + all.length + ' terms'}</h2>`;
+    let open = false;
     for (const g of items) {
       const letter = /[a-z]/i.test(g.t[0]) ? g.t[0].toUpperCase() : '#';
-      if (!q && letter !== last) { html += `${last ? '</ul>' : ''}<p class="letter">${letter}</p><ul class="gl">`; last = letter; }
-      html += `<li><b>${esc(g.t)}</b><p>${esc(g.d)}</p><a href="${P(g.c, 'lesson', g.l.id)}">${many ? esc(g.c.icon || '') + ' ' : ''}${esc(g.l.title)} ›</a></li>`;
+      if (!q && letter !== last) { html += `${open ? '</ul>' : ''}<p class="letter">${letter}</p><ul class="gl">`; last = letter; open = true; }
+      else if (!open) { html += '<ul class="gl">'; open = true; }
+      html += `<li><b>${esc(g.t)}</b><p>${esc(g.d)}</p><a href="${P(g.c, 'lesson', g.l.id)}">${tag(g.c, g.l.title)}</a></li>`;
     }
-    $('#gl').innerHTML = items.length || lessons.length ? html + '</ul>' : `<div class="empty"><p>Nothing matches “${esc(gQuery)}”.</p></div>`;
+    if (open) html += '</ul>';
+    $('#gl').innerHTML = items.length || lessons.length ? html : `<div class="empty"><p>Nothing matches “${esc(gQuery)}”.</p></div>`;
   };
   $('#q').oninput = e => { gQuery = e.target.value; draw(); };
   draw();
 }
 
-/* ───────── Progress & settings ───────── */
+/* ───────── Profile (progress) ───────── */
 function renderYou() {
-  setTab('you');
-  const n = COURSES.reduce((a, c) => a + doneCount(c), 0);
+  setTab('');
+  const n = COURSES.reduce((a, c) => a + doneCount(c), 0), mine = COURSES.filter(started);
   const stats = COURSES.reduce((a, c) => ({answered: a.answered + cs(c).stats.answered, correct: a.correct + cs(c).stats.correct}), {answered: 0, correct: 0});
   const acc = stats.answered ? Math.round(stats.correct / stats.answered * 100) + '%' : '–';
-  const seg = (name, opts, cur) => `<div class="seg" role="group">${opts.map(([v, t]) => `<button data-${name}="${v}" aria-pressed="${String(v) === String(cur)}">${t}</button>`).join('')}</div>`;
-  const mine = COURSES.filter(started);
+  const certs = COURSES.filter(certEarned).length;
+  // strengths: passed unit tests or well-recalled questions; needs practice: missed questions or failed tests
+  const unitScores = mine.flatMap(c => c.units.map(u => {
+    const cards = c.unitLessons(u.n).flatMap(l => l.quiz.map((_, i) => cs(c).cards[`${l.id}#${i}`]).filter(Boolean));
+    const misses = cards.filter(x => x.box === 0).length, avg = cards.length ? cards.reduce((a, x) => a + x.box, 0) / cards.length : 0, t = cs(c).tests[u.n];
+    return {c, u, weak: misses > 0 || (t != null && t < PASS), strong: (t != null && t >= PASS) || (cards.length >= 3 && avg >= 3), rank: (t || 0) / 25 + avg - misses};
+  }));
+  const weak = unitScores.filter(x => x.weak).sort((a, b) => a.rank - b.rank).slice(0, 4), strong = unitScores.filter(x => x.strong && !x.weak).sort((a, b) => b.rank - a.rank).slice(0, 4);
+  const chip = (x, cls) => `<a class="tag ${cls}" href="${P(x.c, 'unit', x.u.n)}">${esc(x.u.title)}</a>`;
   const courseBlock = c => {
     const m = {Mastered: 0, Familiar: 0, Learning: 0}; c.lessons.forEach(l => { const x = mastery(c, l.id); if (x) m[x]++; });
     const w = k => (k / c.lessons.length * 100).toFixed(2) + '%', s = cs(c), dc = doneCount(c);
-    return `<details class="unit pc"><summary><span class="cicon sm">${esc(c.icon || '📘')}</span><span class="t"><b>${esc(c.title)}</b><small>${dc}/${c.lessons.length} lessons${certEarned(c) ? ' · certificate ✓' : ''}</small></span>${ICON.chev}</summary>
+    return `<details class="unit pc"><summary><span class="cdot cg${c.theme}"></span><span class="t"><b>${esc(c.title)}</b><small>${dc}/${c.lessons.length} lessons${certEarned(c) ? ' · certificate ✓' : ''}</small></span>${ICON.chev}</summary>
       <div class="pcin"><div class="mbar"><i class="m-mastered" style="width:${w(m.Mastered)}"></i><i class="m-familiar" style="width:${w(m.Familiar)}"></i><i class="m-learning" style="width:${w(m.Learning)}"></i></div>
       <div class="legend"><span><i class="m-mastered"></i>Mastered ${m.Mastered}</span><span><i class="m-familiar"></i>Familiar ${m.Familiar}</span><span><i class="m-learning"></i>Learning ${m.Learning}</span><span><i></i>Not started ${c.lessons.length - dc}</span></div>
       <div class="list inner">${c.units.map(u => `<a class="item" href="${P(c, 'test', u.n)}"><span>Unit ${u.n} test</span><span class="score-chip ${passed(c, u.n) ? 'ok' : ''}">${s.tests[u.n] != null ? s.tests[u.n] + '%' : '–'}</span></a>`).join('')}
         <a class="item" href="${certEarned(c) ? P(c, 'certificate') : P(c, 'final')}"><span><b>Final exam</b>${certEarned(c) ? ' · view certificate' : ''}</span><span class="score-chip ${passed(c, 'final') ? 'ok' : ''}">${s.tests.final != null ? s.tests.final + '%' : '–'}</span></a></div></div></details>`;
   };
   const notes = COURSES.flatMap(c => c.lessons.filter(l => cs(c).notes[l.id]).map(l => ({c, l, t: cs(c).notes[l.id]})));
-  view.innerHTML = `<div class="fade"><div class="head"><div><p class="eyebrow">Your learning</p><h1>Progress</h1></div></div>
+  view.innerHTML = header() + `<div class="fade">
+    <div class="profile"><span class="avatar lg">${esc(initial())}${certs ? '<i class="vbadge"></i>' : ''}</span>
+      <div><h1>${esc(state.settings.name.trim() || 'Learner')}</h1><p>${plural(mine.length, 'course')} in progress · ${plural(certs, 'certificate')}</p><a href="#/settings">Edit name & settings</a></div></div>
+    <h2 class="sec">Strongest units</h2><div class="chips">${strong.length ? strong.map(x => chip(x, 'tg')).join('') : '<span class="tag" style="background:var(--surface-2);color:var(--muted)">Answer reviews correctly to build strengths</span>'}</div>
+    <h2 class="sec" style="margin-top:18px">Needs practice</h2><div class="chips">${weak.length ? weak.map(x => chip(x, 'tr')).join('') : '<span class="tag" style="background:var(--surface-2);color:var(--muted)">Nothing flagged yet</span>'}</div>
+    <h2 class="sec">My stats</h2>
     <div class="stats">
       <div class="stat"><b>${n}</b><span>lessons done</span></div>
       <div class="stat"><b>${streakNow()}</b><span>day streak</span></div>
       <div class="stat"><b>${fmtMin(totalMins())}</b><span>time studied</span></div>
       <div class="stat"><b>${acc}</b><span>quiz accuracy</span></div>
     </div>
-    <h2 class="section-title">Daily goal</h2>
-    <div class="list"><div class="item"><div><b>Minutes per day</b><p>Lessons, reviews and flashcards in any course count.</p></div>${seg('goal', GOALS.map(g => [g, g]), state.goal)}</div></div>
-    ${mine.length ? `<h2 class="section-title">Courses · mastery & tests</h2>${mine.map(courseBlock).join('')}<p class="fine" style="margin:4px 4px 0">Lessons move up as you answer their questions correctly in spaced reviews over several days.</p>` : ''}
-    ${notes.length ? `<h2 class="section-title">My notes</h2><div class="list">${notes.map(({c, l, t}) => `<a class="item" href="${P(c, 'lesson', l.id)}"><div><b>${esc(l.title)}</b><p>${esc(c.title)} · ${esc(t.slice(0, 120))}${t.length > 120 ? '…' : ''}</p></div></a>`).join('')}</div>` : ''}
-    <h2 class="section-title">Display</h2>
+    ${mine.length ? `<h2 class="sec">Courses · mastery & tests</h2>${mine.map(courseBlock).join('')}<p class="fine" style="margin:4px 4px 0">Lessons move up as you answer their questions correctly in spaced reviews over several days.</p>` : ''}
+    ${notes.length ? `<h2 class="sec">My notes</h2><div class="list">${notes.map(({c, l, t}) => `<a class="item" href="${P(c, 'lesson', l.id)}"><div><b>${esc(l.title)}</b><p>${esc(c.short)} · ${esc(t.slice(0, 120))}${t.length > 120 ? '…' : ''}</p></div></a>`).join('')}</div>` : ''}
+  </div>`;
+}
+
+/* ───────── Settings ───────── */
+function renderSettings() {
+  setTab(null);
+  const seg = (name, opts, cur) => `<div class="seg" role="group">${opts.map(([v, t]) => `<button data-${name}="${v}" aria-pressed="${String(v) === String(cur)}">${t}</button>`).join('')}</div>`;
+  view.innerHTML = topbar('Settings') + `<div class="fade">
+    <label class="field" style="margin-top:4px"><span>Your name</span><input id="sname" value="${esc(state.settings.name)}" maxlength="60" placeholder="Your name" autocomplete="name"></label>
+    <h2 class="sec">Daily goal</h2>
+    <div class="list"><div class="item"><div><b>Minutes per day</b><p>Lessons, reviews and flashcards all count.</p></div>${seg('goal', GOALS.map(g => [g, g]), state.goal)}</div></div>
+    <h2 class="sec">Display</h2>
     <div class="list">
       <div class="item"><b>Theme</b>${seg('theme', [['auto', 'Auto'], ['light', 'Light'], ['dark', 'Dark']], state.settings.theme)}</div>
       <div class="item"><b>Text size</b>${seg('size', [['s', 'A−'], ['m', 'A'], ['l', 'A+']], state.settings.size)}</div>
     </div>
-    <h2 class="section-title">Backup</h2>
+    <h2 class="sec">Backup</h2>
     <div class="list">
       <div class="item"><div><b>Export progress</b><p>Save a backup file before changing phones or clearing browser data.</p></div><button class="linkbtn" id="exp">Export</button></div>
       <div class="item"><div><b>Restore backup</b><p>Merges a backup with this device. Nothing is lost.</p></div><button class="linkbtn" id="imp">Restore</button></div>
@@ -604,18 +658,21 @@ function renderYou() {
     </div>
     <input type="file" id="file" accept=".json,application/json" hidden>
     <p class="foot" id="offline">Checking offline status…</p>
-    <p class="foot" style="margin-top:4px">Steady ${VERSION} · ${plural(COURSES.length, 'course')} · Progress is stored only on this device.</p></div>`;
-  view.querySelectorAll('[data-theme]').forEach(b => b.onclick = () => { state.settings.theme = b.dataset.theme; save(); applySettings(); renderYou(); });
-  view.querySelectorAll('[data-size]').forEach(b => b.onclick = () => { state.settings.size = b.dataset.size; save(); applySettings(); renderYou(); });
-  view.querySelectorAll('[data-goal]').forEach(b => b.onclick = () => { state.goal = +b.dataset.goal; save(); renderYou(); });
+    <p class="foot" style="margin-top:4px">Steady ${VERSION} · ${plural(COURSES.length, 'course')} · Progress is stored only on this device.</p>
+    <p class="foot" style="margin-top:4px">Design adapted from “Educational App | Mobile app Concept” by Nickelfox (Figma Community).</p></div>`;
+  $('#back').onclick = () => goBack('#/home');
+  let t; $('#sname').oninput = e => { clearTimeout(t); t = setTimeout(() => { state.settings.name = e.target.value.slice(0, 60); save(); }, 300); };
+  view.querySelectorAll('[data-theme]').forEach(b => b.onclick = () => { state.settings.theme = b.dataset.theme; save(); applySettings(); renderSettings(); });
+  view.querySelectorAll('[data-size]').forEach(b => b.onclick = () => { state.settings.size = b.dataset.size; save(); applySettings(); renderSettings(); });
+  view.querySelectorAll('[data-goal]').forEach(b => b.onclick = () => { state.goal = +b.dataset.goal; save(); renderSettings(); });
   $('#exp').onclick = exportBackup;
   $('#imp').onclick = () => $('#file').click();
   $('#file').onchange = e => { const f = e.target.files[0]; if (f) importBackup(f); e.target.value = ''; };
   $('#reset').onclick = () => {
     if (!confirm('Erase all progress in every course on this device? Export a backup first if you might want it back.')) return;
-    const settings = state.settings; state = fresh(); state.settings = settings; save(); toast('Progress reset.'); renderYou();
+    const settings = state.settings; state = fresh(); state.settings = settings; state.welcomed = true; save(); toast('Progress reset.'); renderSettings();
   };
-  offlineStatus().then(t => { const el = $('#offline'); if (el) el.textContent = t; });
+  offlineStatus().then(x => { const el = $('#offline'); if (el) el.textContent = x; });
 }
 function download(blob, name) {
   const url = URL.createObjectURL(blob), a = Object.assign(document.createElement('a'), {href: url, download: name});
@@ -651,7 +708,8 @@ function importBackup(file) {
     if (!state.settings.name && inc.settings.name) state.settings.name = inc.settings.name;
     if ((inc.streak.last || '') > (state.streak.last || '') || (inc.streak.last === state.streak.last && inc.streak.count > state.streak.count)) state.streak = inc.streak;
     if (!state.last && inc.last) state.last = inc.last;
-    save(); toast(`Backup restored · ${COURSES.reduce((a, c) => a + doneCount(c), 0)} lessons complete.`); renderYou();
+    state.welcomed = true;
+    save(); toast(`Backup restored · ${COURSES.reduce((a, c) => a + doneCount(c), 0)} lessons complete.`); renderSettings();
   };
   r.readAsText(file);
 }
@@ -666,25 +724,26 @@ let iconImg = null;
 const loadIcon = () => iconImg || (iconImg = new Promise(res => { const i = new Image(); i.onload = () => res(i); i.onerror = () => res(null); i.src = 'icon-192.png'; }));
 async function drawCertificate(c, cv) {
   const img = await loadIcon(), W = 1600, H = 1130, g = cv.getContext('2d'), s = cs(c), name = state.settings.name.trim() || 'Steady learner';
-  const font = (w, z) => `${w} ${z}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif`;
+  const font = (w, z) => `${w} ${z}px Roboto, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif`;
   const fit = (t, w, z, max) => { g.font = font(w, z); while (g.measureText(t).width > max && z > 24) { z -= 2; g.font = font(w, z); } };
   const text = (t, y, w, z, col, max = W - 300) => { fit(t, w, z, max); g.fillStyle = col; g.fillText(t, W / 2, y); };
   cv.width = W; cv.height = H; g.textAlign = 'center';
-  g.fillStyle = '#fbfcfb'; g.fillRect(0, 0, W, H);
-  g.strokeStyle = '#0f766e'; g.lineWidth = 14; g.strokeRect(40, 40, W - 80, H - 80);
-  g.strokeStyle = '#99d5cd'; g.lineWidth = 2; g.strokeRect(70, 70, W - 140, H - 140);
+  g.fillStyle = '#fbfbfd'; g.fillRect(0, 0, W, H);
+  const gr = g.createLinearGradient(0, 0, W, H); gr.addColorStop(.17, '#548ad8'); gr.addColorStop(.85, '#8a4bd3');
+  g.strokeStyle = gr; g.lineWidth = 16; g.strokeRect(40, 40, W - 80, H - 80);
+  g.strokeStyle = '#d9dcf5'; g.lineWidth = 2; g.strokeRect(72, 72, W - 144, H - 144);
   if (img) g.drawImage(img, W / 2 - 44, 100, 88, 88);
-  text('STEADY', 232, 700, 24, '#0f766e');
-  text('Certificate of Completion', 320, 800, 72, '#10201d');
-  text('This certifies that', 405, 400, 30, '#5d6b68');
-  text(name, 505, 750, 80, '#10201d', W - 360);
-  g.fillStyle = '#0f766e'; g.fillRect(W / 2 - 260, 540, 520, 3);
-  text('has successfully completed the course', 615, 400, 30, '#5d6b68');
-  text(c.title, 700, 750, 56, '#10201d');
-  text(`${c.lessons.length} lessons · ${c.units.length} units · Final exam score ${s.tests.final}%`, 765, 400, 28, '#5d6b68');
-  text(new Date(s.certDate + 'T12:00').toLocaleDateString('en-GB', {day: 'numeric', month: 'long', year: 'numeric'}), 880, 600, 30, '#10201d');
-  text('Date of completion', 915, 400, 22, '#5d6b68');
-  text('Self-paced personal study record. Not an accredited qualification.', H - 110, 400, 20, '#8a9592');
+  text('STEADY', 232, 700, 24, '#495eca');
+  text('Certificate of Completion', 320, 500, 72, '#121216');
+  text('This certifies that', 405, 400, 30, '#6f6f7b');
+  text(name, 505, 500, 80, '#121216', W - 360);
+  g.fillStyle = gr; g.fillRect(W / 2 - 260, 540, 520, 4);
+  text('has successfully completed the course', 615, 400, 30, '#6f6f7b');
+  text(c.title, 700, 500, 56, '#121216');
+  text(`${c.lessons.length} lessons · ${c.units.length} units · Final exam score ${s.tests.final}%`, 765, 400, 28, '#6f6f7b');
+  text(new Date(s.certDate + 'T12:00').toLocaleDateString('en-GB', {day: 'numeric', month: 'long', year: 'numeric'}), 880, 500, 30, '#121216');
+  text('Date of completion', 915, 400, 22, '#6f6f7b');
+  text('Self-paced personal study record. Not an accredited qualification.', H - 110, 400, 20, '#999999');
 }
 function renderCertificate(c) {
   if (!certEarned(c)) return location.replace(P(c, 'final'));
@@ -707,6 +766,7 @@ function route() {
   const parts = (location.hash || '#/home').split('/'), a = parts[1];
   if (LEGACY.includes(a) && CB[AI_ID]) return location.replace(`#/c/${AI_ID}/${parts.slice(1).join('/')}`);   // links from AI Study 2.x
   if (a === 'learn' || a === 'glossary') return location.replace(a === 'learn' ? '#/home' : '#/search');
+  if (!state.welcomed && a !== 'welcome') return location.replace('#/welcome');
   const inQuiz = (a === 'c' && ['quiz', 'test', 'final'].includes(parts[3])) || (a === 'review' && parts[2]);
   if (!inQuiz) session = null;
   if (!(a === 'cards' || (a === 'c' && parts[3] === 'cards'))) deck = null;
@@ -723,11 +783,14 @@ function route() {
     else if (sub === 'cards') routeCards(c, arg);
     else renderCourse(c);
   }
+  else if (a === 'welcome') state.welcomed ? location.replace('#/home') : renderWelcome();
+  else if (a === 'courses') renderCourses();
   else if (a === 'review' && (parts[2] === 'due' || parts[2] === 'mix')) routeReviewSession(parts[2]);
   else if (a === 'review') renderReview();
   else if (a === 'cards') routeCards(null);
   else if (a === 'search') renderSearch();
   else if (a === 'you') renderYou();
+  else if (a === 'settings') renderSettings();
   else renderHome();
   onScroll();
 }
@@ -743,7 +806,7 @@ if ('serviceWorker' in navigator && location.protocol !== 'file:') {
   navigator.serviceWorker.register('sw.js').then(reg => { reg.update().catch(() => {}); }).catch(() => {});
   navigator.serviceWorker.addEventListener('controllerchange', () => {
     if (hadController) toast('Steady was updated.', 'Reload', () => location.reload());
-    else if (location.hash === '#/you') renderYou();
+    else if (location.hash === '#/settings') renderSettings();
   });
   if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
 }

@@ -4,6 +4,7 @@
  "title": "AI Foundations",
  "subtitle": "How AI works, how to use it, and how to build and govern it.",
  "icon": "🤖",
+ "short": "AI",
  "about": "A practical course on artificial intelligence: the core concepts, how modern models like LLMs work, prompting, RAG and agents, building and operating AI products, responsible AI and regulation, and AI strategy.",
  "units": [
   {

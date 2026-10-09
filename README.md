@@ -10,7 +10,7 @@ Live: https://sforaihey.github.io/ai-study/
 | 🤖 AI Foundations | 43 | 8 | ~4.5 h |
 | 💰 Personal Finance & Investing | 29 | 7 | ~3.4 h |
 
-Every course works the same way: ~4-minute lessons (explanation, key points, example, misconception, "Try it" task, go-deeper section, key terms), a 3-question quiz with explanations, unit recaps and flashcards, 10-question unit tests, a 30-question final exam (80% to pass) and a certificate. Review (spaced repetition) and Search cover all courses.
+Every course works the same way: ~4-minute lessons (explanation, key points, example, misconception, "Try it" task, go-deeper section, key terms), a 3-question quiz with explanations, unit recaps and flashcards, 10-question unit tests, a 30-question final exam (80% to pass) and a certificate. Review (spaced repetition, via the bell icon) and Search cover all courses.
 
 ## Install on your phone
 - **Android (Chrome):** open the link → menu ⋮ → **Install app**.
@@ -27,6 +27,9 @@ Open it once online; after that it works fully offline. Progress stays on the de
 3. Add the file to `ASSETS` in `sw.js` and bump `VERSION` in **both** `sw.js` and `app.js`.
 
 Lesson `id`s are permanent: progress is stored by id.
+
+## Design credit
+UI adapted from “Educational App | Mobile app Concept” by Nickelfox (Figma Community, CC BY 4.0). Illustrations and card patterns are original.
 
 ## Files
 `index.html` shell · `app.js` app · `app.css` design · `sw.js` offline cache · `courses/` content. No build step: GitHub Pages serves `main` directly.

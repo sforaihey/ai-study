@@ -4,6 +4,7 @@ id: "personal-finance",
 title: "Personal Finance & Investing",
 subtitle: "Budgeting, debt, protection and long-term investing.",
 icon: "💰",
+short: "Finance",
 about: "Learn how money really works: build a budget and emergency fund, avoid expensive debt, understand stocks, bonds, sukuk and funds, invest with discipline, and plan for the long term. Examples use Saudi riyals and the Saudi context where relevant.",
 disclaimer: "Educational content only, not personal financial, investment, tax or religious advice. For decisions about your own situation, consult a licensed adviser, and for religious rulings a qualified scholar.",
 units: [
