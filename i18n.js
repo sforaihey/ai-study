@@ -15,8 +15,7 @@ window.STEADY_AR = {
   'Saved progress was unreadable. A copy was kept, and you can restore a backup in Settings.': 'تعذّرت قراءة التقدّم المحفوظ. احتفظنا بنسخة منه، ويمكنك استعادة نسخة احتياطية من الإعدادات.',
 
   // Welcome
-  'Learn anything,<br>a little every day': 'تعلّم أي شيء،<br>قليلاً كل يوم',
-  'Short lessons, quick quizzes and smart review, all offline. Pick a course and keep a steady streak.': 'دروس قصيرة واختبارات سريعة ومراجعة ذكية، وكلها تعمل دون إنترنت. اختر دورة وحافظ على سلسلة أيامك.',
+  'Small steps.<br>Steady progress.': 'القليل المستمر<br>يصنع الكثير',
   'What should we call you?': 'ماذا نناديك؟', 'Your name': 'اسمك', 'Let’s start': 'لنبدأ',
 
   // Home

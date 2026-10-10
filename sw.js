@@ -1,6 +1,6 @@
 /* Steady service worker: caches the whole app so it works fully offline.
    Bump VERSION (here and in app.js) on every release, and list every course file in ASSETS. Progress lives in localStorage and is never touched here. */
-const VERSION = '3.4.0';
+const VERSION = '3.4.1';
 const CACHE = 'steady-' + VERSION;
 const ASSETS = ['./', 'index.html', 'app.css', 'app.js', 'config.js', 'i18n.js', 'manifest.webmanifest',
   'courses/ai-foundations.js', 'courses/ai-foundations.practice.js', 'courses/personal-finance.js', 'courses/personal-finance.practice.js',

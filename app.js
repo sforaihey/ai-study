@@ -1,7 +1,7 @@
 /* Steady · offline-first learning app for any subject. Courses live in courses/*.js; progress in localStorage. */
 (() => {
 'use strict';
-const VERSION = '3.4.0';
+const VERSION = '3.4.1';
 const KEY = 'steady-v3', V2_KEY = 'ai-study-v2', V1_KEY = 'ai-study-pwa-v1', AI_ID = 'ai-foundations';
 const INTERVALS = [0, 1, 3, 7, 16, 35];            // days until next review, by box
 const REVIEW_MAX = 15, CARDS_MAX = 20, PASS = 80, GOALS = [5, 10, 15, 20], TEST_Q = 10, FINAL_Q = 30;
@@ -363,8 +363,7 @@ function renderWelcome() {
   view.innerHTML = `<div class="plumbg"></div><div class="welcome fade">
     <div class="wtop"><span class="brand">${LOGO}</span>${langSeg()}</div>
     ${WELCOME_ART}
-    <h1>${L('Learn anything,<br>a little every day')}</h1>
-    <p>${L('Short lessons, quick quizzes and smart review, all offline. Pick a course and keep a steady streak.')}</p>
+    <h1>${L('Small steps.<br>Steady progress.')}</h1>
     <label class="field"><span>${L('What should we call you?')}</span><input id="wname" value="${esc(state.settings.name)}" maxlength="60" placeholder="${L('Your name')}" autocomplete="given-name"></label>
     <div class="stack"><button class="btn white" id="start">${L('Let’s start')} ${ICON.arrow}</button></div></div>`;
   bindLang(view);
