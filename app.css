@@ -380,3 +380,21 @@ svg.ar{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:2.2;str
 .cheer{border:0;cursor:pointer;text-align:left;color:var(--text)}
 .cheer b{font-size:26px}.cheer span{font-size:14px;color:var(--muted)}
 .hero .go{border:0;cursor:pointer;font-family:inherit}
+
+/* ── User-created courses ── */
+.tag.aib{background:var(--violet-soft);color:var(--violet)}
+.plumbtns{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:22px}
+.plumbtn{background:rgba(255,255,255,.12);color:#fff;box-shadow:none}
+.plumbtns .ic{width:20px;height:20px}
+.plumrow{background:rgba(255,255,255,.1);color:#fff;box-shadow:none;margin-top:12px}.plumrow small{color:rgba(255,255,255,.75)}.plumrow .ar{color:#fff}
+.orow{display:flex;align-items:center;gap:8px;margin-top:6px}
+.orow .lm{width:18px;text-align:center}
+.oin{flex:1;min-width:0;width:100%;padding:10px 12px;border-radius:12px;border:1.5px solid var(--border);background:var(--bg);color:var(--text);font:inherit;font-size:15px;outline:none}
+.oin:focus{border-color:var(--primary)}
+.oin.ob{font-weight:500;font-size:16px;background:transparent;border-color:transparent;padding-left:0}
+.spin{display:inline-block;width:16px;height:16px;border-radius:50%;border:2px solid var(--primary-soft);border-top-color:var(--primary);animation:sp .8s linear infinite}
+@keyframes sp{to{transform:rotate(360deg)}}
+.field .seg{min-width:0}
+[dir=rtl] .box.key{border-left:0;border-right:4px solid var(--primary)}
+[dir=rtl] .lesson,[dir=rtl] .q,[dir=rtl] .flash{text-align:right}
+[dir=rtl] .opt{text-align:right}

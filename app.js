@@ -1,7 +1,7 @@
 /* Steady · offline-first learning app for any subject. Courses live in courses/*.js; progress in localStorage. */
 (() => {
 'use strict';
-const VERSION = '3.2.0';
+const VERSION = '3.3.0';
 const KEY = 'steady-v3', V2_KEY = 'ai-study-v2', V1_KEY = 'ai-study-pwa-v1', AI_ID = 'ai-foundations';
 const INTERVALS = [0, 1, 3, 7, 16, 35];            // days until next review, by box
 const REVIEW_MAX = 15, CARDS_MAX = 20, PASS = 80, GOALS = [5, 10, 15, 20], TEST_Q = 10, FINAL_Q = 30;
@@ -47,12 +47,15 @@ const ICON = {
 /* ───────── Courses ───────── */
 const COURSES = (window.COURSES || []).filter(c => c && c.id && Array.isArray(c.lessons) && Array.isArray(c.units));
 const testMins = n => Math.round(n * MIN_PER_Q + 1);
-COURSES.forEach((c, ci) => {
-  c.theme = [1, 2, 3, 4].includes(c.theme) ? c.theme : (ci % 4) + 1;     // gradient + tag colour
+function prepCourse(c, ci) {
+  const h = [...String(c.id)].reduce((a, ch) => a + ch.charCodeAt(0), 0);
+  c.theme = [1, 2, 3, 4].includes(c.theme) ? c.theme : ((ci == null ? h : ci) % 4) + 1;     // gradient + tag colour
   c.short = c.short || c.title.split(/\s+&\s+|\s+/)[0];
+  c.dir = c.dir === 'rtl' || c.lang === 'ar' ? 'rtl' : 'ltr';
+  c.units.forEach(u => { u.scenarios = u.scenarios || []; u.objectives = u.objectives || []; });
   c.lessons.forEach((l, i) => {
-    l.index = i;
-    l.mins = Math.max(3, Math.round(words([l.intro, ...l.body, ...l.points, l.example, l.myth, l.try || '', ...l.terms.flat()]) / WPM + l.quiz.length * MIN_PER_Q));
+    l.index = i; l.points = l.points || []; l.terms = l.terms || []; l.quiz = l.quiz || []; l.body = l.body || [];
+    l.mins = Math.max(3, Math.round(words([l.intro || '', ...l.body, ...l.points, l.example || '', l.myth || '', l.try || '', ...l.terms.flat()]) / WPM + l.quiz.length * MIN_PER_Q));
     l.deepMins = Math.max(1, Math.round(words(l.deeper || ['']) / WPM));
   });
   c.byId = Object.fromEntries(c.lessons.map(l => [l.id, l]));
@@ -60,8 +63,24 @@ COURSES.forEach((c, ci) => {
   c.unitLessons = n => c.lessons.filter(l => l.unit === +n);
   c.terms = new Map(); for (const l of c.lessons) for (const [t, d] of l.terms) { const k = t.toLowerCase(); if (!c.terms.has(k)) c.terms.set(k, {k: 't:' + k, t, d, l}); }
   c.totalMins = c.lessons.reduce((a, l) => a + l.mins, 0) + c.units.length * testMins(TEST_Q) + testMins(FINAL_Q);
-});
+  return c;
+}
+COURSES.forEach(prepCourse);
 const CB = Object.fromEntries(COURSES.map(c => [c.id, c]));
+/* Cloud courses (created or enrolled) are cached on the device so they work offline. */
+const LIB_KEY = 'steady-library';
+const libRead = () => { try { return JSON.parse(localStorage.getItem(LIB_KEY) || '{}') || {}; } catch (e) { return {}; } };
+let library = libRead();                       // {uuid: {content, meta:{version,is_owner,visibility,review_status,review_note,author,status,ai}}}
+const libSave = () => { try { localStorage.setItem(LIB_KEY, JSON.stringify(library)); } catch (e) { toast('Your phone is out of space for course downloads.'); } };
+const cloudId = uuid => 'u-' + uuid;
+function installCourse(uuid) {
+  const entry = library[uuid]; if (!entry || entry.meta.status !== 'ready' || !entry.content || !Array.isArray(entry.content.lessons)) return null;
+  const c = prepCourse(Object.assign(JSON.parse(JSON.stringify(entry.content)), {id: cloudId(uuid), cloud: {uuid, ...entry.meta}}));
+  const i = COURSES.findIndex(x => x.id === c.id); if (i >= 0) COURSES[i] = c; else COURSES.push(c);
+  CB[c.id] = c; return c;
+}
+function uninstallCourse(uuid) { const id = cloudId(uuid), i = COURSES.findIndex(x => x.id === id); if (i >= 0) COURSES.splice(i, 1); delete CB[id]; }
+Object.keys(library).forEach(installCourse);
 const P = (c, ...parts) => `#/c/${c.id}${parts.length ? '/' + parts.join('/') : ''}`;
 const tag = (c, text) => `<span class="tag t${c.theme}">${esc(text || c.short)}</span>`;
 function qOf(c, key) {
@@ -267,7 +286,9 @@ function renderCourses() {
     <h1 class="plum-title">Courses</h1><p class="plum-sub">${plural(COURSES.length, 'course')} · ${plural(COURSES.reduce((a, c) => a + c.lessons.length, 0), 'lesson')}</p>
     <div class="stack-cards">${COURSES.map(c => { const n = doneCount(c), pct = Math.round(n / c.lessons.length * 100);
       return `<a class="scard cg${c.theme}" href="${P(c)}"><b>${esc(c.title)}</b><small>${certEarned(c) ? 'Completed ✓' : started(c) ? `${n}/${c.lessons.length} lessons` : `${c.lessons.length} lessons · ${fmtMin(c.totalMins)}`}</small>${started(c) ? `<span class="sbar"><i style="width:${pct}%"></i></span>` : ''}</a>`; }).join('')}</div>
-    <p class="plum-note">Every course works the same way: ~4-minute lessons, quick quizzes, spaced review, unit tests and a certificate. To add a subject, ask Claude: “Add a Steady course on …”.</p>
+    ${Object.entries(library).filter(([, e]) => e.meta.status !== 'ready').map(([id, e]) => `<a class="rowlink plumrow" href="#/build/${id}"><span><b style="font-weight:500">${esc(e.content.title)}</b><small>Still being written · tap to continue</small></span>${ICON.arrow}</a>`).join('')}
+    <div class="plumbtns"><a class="btn white" href="#/create">${ICON.plus} Create with AI</a><a class="btn plumbtn" href="#/catalog">${svg('<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>')} Explore</a></div>
+    <p class="plum-note">Create a course on any subject with Claude, or explore courses others have shared. Every course works the same way: ~4-minute lessons, quizzes, spaced review, unit tests and a certificate.</p>
   </div>`;
 }
 
@@ -294,7 +315,7 @@ function renderCourse(c) {
       </ol></details>`;
   }).join('');
   view.innerHTML = topbar(esc(c.title)) + `<div class="fade">
-    <div class="chero cg${c.theme}"><h1>${esc(c.title)}</h1><p class="stats-line">${c.lessons.length} lessons · ${c.units.length} units · about ${fmtMin(c.totalMins)}</p>
+    <div class="chero cg${c.theme}"><h1>${esc(c.title)}</h1><p class="stats-line">${c.lessons.length} lessons · ${c.units.length} units · about ${fmtMin(c.totalMins)}</p>${c.cloud ? `<p class="stats-line">${c.cloud.ai ? 'AI-generated' : 'Shared course'}${c.cloud.author ? ' · by ' + esc(c.cloud.author) : ''}</p>` : ''}
       <a class="row" href="${href}"><span class="next">${nx}</span><span class="go">${btn}</span></a></div>
     <p class="about">${esc(c.about || c.subtitle || '')}</p>
     <div class="progress"><div class="bar"><i style="width:${pct}%"></i></div><span>${n}/${c.lessons.length} lessons</span></div>
@@ -302,9 +323,11 @@ function renderCourse(c) {
     <h2 class="sec">${c.units.length} units</h2>${units}
     <a class="finalcard" href="${certEarned(c) ? P(c, 'certificate') : P(c, 'final')}"><span class="ico big ${passed(c, 'final') ? 'ok' : ''}">${ICON.award}</span>
       <span class="t"><b>${certEarned(c) ? 'Your certificate' : 'Final exam & certificate'}</b><small>${certEarned(c) ? `Earned ${fmtDate(s.certDate, {day: 'numeric', month: 'short', year: 'numeric'})}` : `${FINAL_Q} questions · pass mark ${PASS}%${s.tests.final != null ? ` · best ${s.tests.final}%` : ''}`}</small></span>${ICON.arrow}</a>
+    ${cloudPanel(c)}
     ${c.disclaimer ? `<p class="disclaimer">${esc(c.disclaimer)}</p>` : ''}
   </div>`;
   $('#back').onclick = () => goBack('#/courses');
+  bindCloudPanel(c);
 }
 
 /* ───────── Lesson ───────── */
@@ -646,6 +669,7 @@ function renderSettings() {
   const seg = (name, opts, cur) => `<div class="seg" role="group">${opts.map(([v, t]) => `<button data-${name}="${v}" aria-pressed="${String(v) === String(cur)}">${t}</button>`).join('')}</div>`;
   view.innerHTML = topbar('Settings') + `<div class="fade">
     ${CLOUD ? `<a class="rowlink" href="#/account"><span><b style="font-weight:500">${signedIn() ? 'Account · ' + esc(auth.user.email) : 'Create account or sign in'}</b><small>${signedIn() ? (cloud.syncedAt ? 'Synced ' + ago(cloud.syncedAt) : 'Not synced yet') : 'Sync between phones and study with friends'}</small></span>${ICON.arrow}</a>` : ''}
+    <a class="rowlink" href="#/admin" id="adminrow" hidden><span><b style="font-weight:500">Course reviews</b><small>Approve public courses and handle reports</small></span>${ICON.arrow}</a>
     <label class="field" style="margin-top:4px"><span>Your name</span><input id="sname" value="${esc(state.settings.name)}" maxlength="60" placeholder="Your name" autocomplete="name"></label>
     <h2 class="sec">Daily goal</h2>
     <div class="list"><div class="item"><div><b>Minutes per day</b><p>Lessons, reviews and flashcards all count.</p></div>${seg('goal', GOALS.map(g => [g, g]), state.goal)}</div></div>
@@ -677,6 +701,7 @@ function renderSettings() {
     const settings = state.settings; state = fresh(); state.settings = settings; state.welcomed = true; save(); toast('Progress reset.'); renderSettings();
   };
   offlineStatus().then(x => { const el = $('#offline'); if (el) el.textContent = x; });
+  checkAdmin().then(ok => { const el = $('#adminrow'); if (el && ok) el.hidden = false; });
 }
 function download(blob, name) {
   const url = URL.createObjectURL(blob), a = Object.assign(document.createElement('a'), {href: url, download: name});
@@ -784,7 +809,7 @@ function setSession(d) {
   auth = {access_token: d.access_token, refresh_token: d.refresh_token, expires_at: Math.floor(Date.now() / 1000) + (d.expires_in || 3600), user: {id: d.user.id, email: d.user.email}};
   writeJSON(AUTH_KEY, auth);
 }
-function clearSession() { auth = null; cloud = {me: null, people: [], cheers: [], syncedAt: 0}; writeJSON(AUTH_KEY, null); writeJSON(FRIENDS_KEY, null); }
+function clearSession() { isAdminCache = null; auth = null; cloud = {me: null, people: [], cheers: [], syncedAt: 0}; writeJSON(AUTH_KEY, null); writeJSON(FRIENDS_KEY, null); }
 async function api(path, {method = 'GET', body, prefer, anon} = {}) {
   if (!anon) await ensureToken();
   const headers = {apikey: CFG.supabaseKey, 'Content-Type': 'application/json'};
@@ -840,6 +865,7 @@ async function syncNow(opts = {}) {
     const byId = Object.fromEntries(sums.map(x => [x.user_id, x]));
     cloud = {me: {id: me, code: meProfile.friend_code}, people: profiles.map(p => ({id: p.id, name: (byId[p.id] || p).name || p.name, me: p.id === me, sum: byId[p.id] || null})), cheers, syncedAt: Date.now()};
     writeJSON(FRIENDS_KEY, cloud);
+    await syncLibrary().catch(() => {});
     save(true);
     const fresh = cheers.filter(c => !c.seen);
     if (fresh.length) {
@@ -982,6 +1008,264 @@ if (CLOUD) {
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') syncNow({rerender: ['#/friends', '#/home', ''].includes(location.hash)}); });
 }
 
+/* ───────── Course library: catalog, preview, enroll, sharing, AI builder, admin ───────── */
+const fnCall = (action, payload = {}) => api('/functions/v1/steady-ai', {method: 'POST', body: {action, ...payload}});
+const rpc = (name, body = {}, anonOk) => api('/rest/v1/rpc/' + name, {method: 'POST', body, anon: !!anonOk && !signedIn()});
+const needCloud = () => { if (CLOUD) return false; toast('Online features aren’t connected yet.'); return true; };
+const AI_BADGE = '<span class="tag aib">AI-generated</span>';
+const VIS = {private: 'Only me', link: 'Anyone with the link', public: 'Public catalog'};
+const shareLink = uuid => `${location.origin}${location.pathname}#/join/${uuid}`;
+async function fetchToLibrary(uuid) {
+  const d = await rpc('get_course', {cid: uuid}, true);
+  library[uuid] = {content: d.content, meta: {version: d.version, is_owner: d.is_owner, visibility: d.visibility, review_status: d.review_status, review_note: d.review_note, author: d.author, status: d.status, ai: d.ai_generated}};
+  libSave(); if (d.status === 'ready') installCourse(uuid); else uninstallCourse(uuid);
+  return d;
+}
+async function syncLibrary() {
+  if (!signedIn()) return;
+  const rows = await rpc('my_library');
+  for (const r of rows) { const have = library[r.id]; if (!have || have.meta.version !== r.version || have.meta.status !== r.status) { try { await fetchToLibrary(r.id); } catch (e) {} } }
+  for (const uuid of Object.keys(library)) if (!rows.some(r => r.id === uuid) && library[uuid].meta.synced) { delete library[uuid]; uninstallCourse(uuid); }
+  for (const r of rows) if (library[r.id]) library[r.id].meta.synced = true;
+  libSave();
+}
+function courseBadges(c) {
+  if (!c.cloud) return '';
+  return (c.cloud.ai ? AI_BADGE : '') + (c.lang === 'ar' ? '<span class="tag t3">العربية</span>' : '');
+}
+
+// Catalog
+let catQuery = '';
+async function renderCatalog() {
+  setTab('courses');
+  view.innerHTML = topbar('Explore courses') + `<div class="fade">
+    <label class="search"><input id="cq" type="search" placeholder="Search the catalog" value="${esc(catQuery)}" autocomplete="off" enterkeyhint="search">${ICON.search}</label>
+    <div id="catlist"><div class="card empty"><p>Loading courses…</p></div></div></div>`;
+  $('#back').onclick = () => goBack('#/courses');
+  if (needCloud()) return;
+  const draw = async () => {
+    try {
+      const rows = await rpc('catalog', {q: catQuery.trim()}, true);
+      $('#catlist').innerHTML = rows.length ? rows.map(r => `<a class="rowlink" href="#/preview/${r.id}"><span><b style="font-weight:500">${esc(r.title)}</b>
+        <small>${esc(r.subtitle || '')}</small><small>${r.lesson_count} lessons · ${plural(r.enroll_count, 'learner')} · by ${esc(r.author)} ${r.ai_generated ? '· AI-generated' : ''} ${r.lang === 'ar' ? '· العربية' : ''}</small></span>${ICON.arrow}</a>`).join('')
+        : `<div class="card empty"><h2>${catQuery ? 'No matches' : 'The catalog is empty for now'}</h2><p>Public courses appear here once approved. You can also create your own.</p><div class="stack"><a class="btn primary" href="#/create">Create a course</a></div></div>`;
+    } catch (e) { $('#catlist').innerHTML = `<div class="card empty"><p>${navigator.onLine ? esc(e.message) : 'The catalog needs an internet connection.'}</p></div>`; }
+  };
+  let t; $('#cq').oninput = e => { catQuery = e.target.value; clearTimeout(t); t = setTimeout(draw, 300); };
+  draw();
+}
+
+// Preview (catalog or invite link) → enroll
+async function renderPreview(uuid) {
+  setTab(null);
+  view.innerHTML = topbar('Course') + `<div class="card empty fade"><p>Loading…</p></div>`;
+  $('#back').onclick = () => goBack('#/courses');
+  if (needCloud()) return;
+  if (CB[cloudId(uuid)]) return location.replace(P(CB[cloudId(uuid)]));
+  let d;
+  try { d = await rpc('get_course', {cid: uuid}, true); }
+  catch (e) { view.innerHTML = topbar('Course') + `<div class="card empty"><h2>Can’t open this course</h2><p>${esc(navigator.onLine ? e.message : 'You’re offline.')}</p></div>`; $('#back').onclick = () => goBack('#/courses'); return; }
+  if (d.status !== 'ready') { view.innerHTML = topbar('Course') + `<div class="card empty"><h2>Still being written</h2><p>This course isn’t finished yet. Try again later.</p></div>`; $('#back').onclick = () => goBack('#/courses'); return; }
+  const c = d.content, rtl = c.lang === 'ar';
+  view.innerHTML = topbar('Course') + `<div class="fade" ${rtl ? 'dir="rtl" lang="ar"' : ''}>
+    <div class="chero cg${1 + ([...uuid].reduce((a, ch) => a + ch.charCodeAt(0), 0) % 4)}"><h1>${esc(c.icon || '')} ${esc(c.title)}</h1><p class="stats-line">${c.lessons.length} lessons · ${c.units.length} units · by ${esc(d.author || 'Learner')}</p></div>
+    <p class="meta" style="margin-top:12px">${d.ai_generated ? AI_BADGE : ''}${plural(d.enroll_count, 'learner')}</p>
+    <p class="about">${esc(c.about || c.subtitle || '')}</p>
+    <h2 class="sec">What you’ll learn</h2>
+    ${c.units.map(u => `<div class="card" style="margin-bottom:10px"><b style="font-weight:500">${u.n}. ${esc(u.title)}</b><p class="fine">${(c.lessons || []).filter(l => l.unit === u.n).map(l => esc(l.title)).join(' · ')}</p></div>`).join('')}
+    ${c.disclaimer ? `<p class="disclaimer">${esc(c.disclaimer)}</p>` : ''}
+    <div class="stack"><button class="btn primary" id="enroll">Add to my courses</button>${signedIn() && !d.is_owner ? '<button class="linkbtn danger" id="report" style="font-size:13px">Report a problem with this course</button>' : ''}</div></div>`;
+  $('#back').onclick = () => goBack('#/courses');
+  $('#enroll').onclick = async () => {
+    const b = $('#enroll'); b.disabled = true; b.textContent = 'Downloading…';
+    try {
+      if (signedIn()) await rpc('enroll', {cid: uuid});
+      await fetchToLibrary(uuid); toast(signedIn() ? 'Added to your courses. It works offline too.' : 'Added on this phone. Create an account to sync it.');
+      location.replace(P(CB[cloudId(uuid)]));
+    } catch (e) { toast(e.message); b.disabled = false; b.textContent = 'Add to my courses'; }
+  };
+  const rp = $('#report'); if (rp) rp.onclick = async () => {
+    const reason = prompt('What’s wrong with this course? (e.g. incorrect information, inappropriate content)'); if (!reason || !reason.trim()) return;
+    try { await rpc('report_course', {cid: uuid, reason: reason.trim()}); toast('Thanks. The admin will review it.'); } catch (e) { toast(e.message); }
+  };
+}
+
+// Sharing / management panel on a cloud course page
+function cloudPanel(c) {
+  if (!c.cloud) return '';
+  const m = c.cloud;
+  if (!m.is_owner) return `<h2 class="sec">This course</h2><div class="list"><div class="item"><div><b>By ${esc(m.author || 'Learner')}</b><p>${m.ai ? 'AI-generated, not expert-reviewed' : 'Shared course'}</p></div></div>
+    <div class="item"><button class="linkbtn" data-act="report">Report a problem</button><button class="linkbtn danger" data-act="leave">Remove from my courses</button></div></div>`;
+  const status = m.visibility === 'public' ? ({pending: '⏳ Waiting for approval to appear in the catalog', approved: '✓ Listed in the public catalog', rejected: '✕ Not approved' + (m.review_note ? ': ' + m.review_note : '')}[m.review_status] || '') : '';
+  return `<h2 class="sec">Sharing</h2><div class="card">
+    <div class="seg" role="group">${Object.keys(VIS).map(v => `<button data-vis="${v}" aria-pressed="${m.visibility === v}">${v === 'private' ? 'Private' : v === 'link' ? 'Link' : 'Public'}</button>`).join('')}</div>
+    <p class="fine">${m.visibility === 'public' ? 'Listed in the public catalog for everyone, after review.' : m.visibility === 'link' ? 'Anyone you send the link to can add it.' : 'Only you can see it.'}</p>
+    ${status ? `<p class="fine" style="color:var(--text)">${esc(status)}</p>` : ''}
+    ${m.visibility !== 'private' ? `<div class="stack"><button class="btn" data-act="share">Share link</button></div>` : ''}
+    <p class="fine" style="margin-top:14px"><button class="linkbtn danger" data-act="delete" style="font-size:13px">Delete this course</button></p></div>`;
+}
+function bindCloudPanel(c) {
+  if (!c.cloud) return; const uuid = c.cloud.uuid;
+  view.querySelectorAll('[data-vis]').forEach(b => b.onclick = async () => {
+    if (!signedIn()) return toast('Sign in to change sharing.');
+    try { const r = await rpc('set_visibility', {cid: uuid, vis: b.dataset.vis}); Object.assign(library[uuid].meta, r); libSave(); installCourse(uuid);
+      toast(r.review_status === 'pending' ? 'Sent for approval. It will appear in the catalog once approved.' : 'Sharing updated.'); route(); } catch (e) { toast(e.message); }
+  });
+  const act = (name, fn) => { const b = view.querySelector(`[data-act="${name}"]`); if (b) b.onclick = fn; };
+  act('share', async () => { const text = `Learn “${c.title}” with me on Steady: ${shareLink(uuid)}`;
+    try { if (navigator.share) await navigator.share({title: c.title, text}); else { await navigator.clipboard.writeText(text); toast('Link copied.'); } } catch (e) {} });
+  act('delete', async () => {
+    if (!confirm(`Delete “${c.title}” for everyone? People who added it will lose access when they next sync.`)) return;
+    try { await rpc('delete_course', {cid: uuid}); delete library[uuid]; libSave(); uninstallCourse(uuid); toast('Course deleted.'); location.replace('#/courses'); } catch (e) { toast(e.message); }
+  });
+  act('leave', async () => {
+    if (!confirm('Remove this course from your courses? Your progress is kept if you add it again.')) return;
+    try { if (signedIn()) await rpc('unenroll', {cid: uuid}); } catch (e) {}
+    delete library[uuid]; libSave(); uninstallCourse(uuid); location.replace('#/courses');
+  });
+  act('report', async () => {
+    if (!signedIn()) return toast('Sign in to report a course.');
+    const reason = prompt('What’s wrong with this course?'); if (!reason || !reason.trim()) return;
+    try { await rpc('report_course', {cid: uuid, reason: reason.trim()}); toast('Thanks. The admin will review it.'); } catch (e) { toast(e.message); }
+  });
+}
+
+// AI course builder: brief → outline → build
+let draft = null;      // {topic, goal, level, length, lang, outline}
+async function renderCreate() {
+  setTab(null);
+  if (!CLOUD || !signedIn()) {
+    view.innerHTML = topbar('Create a course') + `<div class="fade"><div class="card empty"><h2>Create courses with AI</h2><p>Describe any subject and Claude writes a full Steady course: lessons, quizzes, tests and flashcards. You need a free account so your courses are saved and can be shared.</p>
+      <div class="stack"><a class="btn primary" href="#/account">Create account or sign in</a></div></div></div>`;
+    $('#back').onclick = () => goBack('#/courses'); return;
+  }
+  draft = draft || {topic: '', goal: '', level: 'beginner', length: 'standard', lang: 'en', outline: null};
+  if (draft.outline) return renderOutline();
+  const seg = (name, opts) => `<div class="seg" role="group" style="margin-top:6px">${opts.map(([v, t]) => `<button type="button" data-${name}="${v}" aria-pressed="${draft[name] === v}">${t}</button>`).join('')}</div>`;
+  view.innerHTML = topbar('Create a course') + `<div class="fade">
+    <div class="hi"><h1>What do you want to learn?</h1><p id="quota">Checking your monthly allowance…</p></div>
+    <label class="field"><span>Topic</span><input id="ctopic" maxlength="200" value="${esc(draft.topic)}" placeholder="e.g. Basics of nutrition, Saudi labour law, Public speaking"></label>
+    <label class="field"><span>Your goal (optional)</span><input id="cgoal" maxlength="400" value="${esc(draft.goal)}" placeholder="e.g. Plan healthier meals for my family"></label>
+    <div class="field"><span>Level</span>${seg('level', [['beginner', 'Beginner'], ['intermediate', 'Intermediate'], ['advanced', 'Advanced']])}</div>
+    <div class="field"><span>Length</span>${seg('length', [['quick', 'Quick · 10'], ['standard', 'Standard · 25'], ['deep', 'Deep · 40']])}</div>
+    <div class="field"><span>Language</span>${seg('lang', [['en', 'English'], ['ar', 'العربية']])}</div>
+    <div class="stack"><button class="btn primary" id="mkoutline">Draft the outline</button></div>
+    <p class="fine">Claude drafts an outline first, and you can edit it before anything is written. Drafting outlines doesn’t use your allowance; building the course does.</p></div>`;
+  $('#back').onclick = () => goBack('#/courses');
+  ['level', 'length', 'lang'].forEach(k => view.querySelectorAll(`[data-${k}]`).forEach(b => b.onclick = () => { draft.topic = $('#ctopic').value; draft.goal = $('#cgoal').value; draft[k] = b.dataset[k]; renderCreate(); }));
+  fnCall('quota').then(q => { const el = $('#quota'); if (el) el.textContent = q.admin ? 'Admin: unlimited courses' : `${Math.max(0, q.limit - q.used)} of ${q.limit} AI courses left this month`; }).catch(() => { const el = $('#quota'); if (el) el.textContent = ''; });
+  $('#mkoutline').onclick = async () => {
+    draft.topic = $('#ctopic').value.trim(); draft.goal = $('#cgoal').value.trim();
+    if (draft.topic.length < 3) return toast('Please describe the topic.');
+    const b = $('#mkoutline'); b.disabled = true; b.textContent = 'Claude is drafting the outline… (about a minute)';
+    try { const r = await fnCall('outline', {topic: draft.topic, goal: draft.goal, level: draft.level, length: draft.length, lang: draft.lang}); draft.outline = r.outline; renderOutline(); }
+    catch (e) { toast(e.message); b.disabled = false; b.textContent = 'Draft the outline'; }
+  };
+}
+function renderOutline() {
+  setTab(null);
+  const o = draft.outline, rtl = draft.lang === 'ar';
+  view.innerHTML = topbar('Review the outline') + `<div class="fade">
+    <p class="fine" style="margin-top:0">Edit any title, remove lessons you don’t want, or ask Claude to revise. Nothing is written until you tap Build.</p>
+    <div ${rtl ? 'dir="rtl" lang="ar"' : ''}>
+    <label class="field"><span>Course title</span><input id="otitle" maxlength="120" value="${esc(o.title)}"></label>
+    <p class="about">${esc(o.about || '')}</p>
+    ${o.units.map((u, ui) => `<div class="card" style="margin-bottom:10px"><input class="oin ob" data-u="${ui}" value="${esc(u.title)}" maxlength="120">
+      ${u.lessons.map((l, li) => `<div class="orow"><span class="lm">${li + 1}</span><input class="oin" data-u="${ui}" data-l="${li}" value="${esc(l.title)}" maxlength="80"><button class="iconbtn" data-rm="${ui}:${li}" aria-label="Remove lesson">${ICON.close}</button></div>`).join('')}</div>`).join('')}
+    </div>
+    <label class="field"><span>Ask Claude to change something (optional)</span><input id="ofb" maxlength="600" placeholder="e.g. More practical examples, add a unit on budgeting apps"></label>
+    <div class="stack two"><button class="btn" id="revise">Revise outline</button><button class="btn" id="restart">Start over</button></div>
+    <div class="stack"><button class="btn primary" id="build">Build this course · ${o.units.reduce((a, u) => a + u.lessons.length, 0)} lessons</button></div>
+    <p class="fine">Building takes about ${Math.round(o.units.reduce((a, u) => a + u.lessons.length, 0) * 0.7 + o.units.length * 1.2)} minutes. Keep the app open while it builds; if you leave, it continues where it stopped next time you open it.</p></div>`;
+  $('#back').onclick = () => { draft.outline = null; renderCreate(); };
+  const collect = () => { o.title = $('#otitle').value.trim() || o.title; view.querySelectorAll('.oin').forEach(i => { const u = o.units[+i.dataset.u]; if (i.dataset.l != null) u.lessons[+i.dataset.l].title = i.value.trim() || u.lessons[+i.dataset.l].title; else u.title = i.value.trim() || u.title; }); };
+  view.querySelectorAll('[data-rm]').forEach(b => b.onclick = () => { collect(); const [ui, li] = b.dataset.rm.split(':').map(Number); if (o.units[ui].lessons.length <= 1) return toast('A unit needs at least one lesson.'); o.units[ui].lessons.splice(li, 1); renderOutline(); });
+  $('#restart').onclick = () => { draft = null; renderCreate(); };
+  $('#revise').onclick = async () => {
+    collect(); const fb = $('#ofb').value.trim(); if (!fb) return toast('Tell Claude what to change.');
+    const b = $('#revise'); b.disabled = true; b.textContent = 'Revising…';
+    try { const r = await fnCall('outline', {topic: draft.topic, goal: draft.goal, level: draft.level, length: draft.length, lang: draft.lang, previous: o, feedback: fb}); draft.outline = r.outline; renderOutline(); }
+    catch (e) { toast(e.message); b.disabled = false; b.textContent = 'Revise outline'; }
+  };
+  $('#build').onclick = async () => {
+    collect(); const b = $('#build'); b.disabled = true; b.textContent = 'Starting…';
+    try { const r = await fnCall('start', {outline: o, lang: draft.lang, level: draft.level});
+      library[r.id] = {content: r.content, meta: {version: 1, is_owner: true, visibility: 'private', review_status: 'none', status: 'generating', ai: true, author: state.settings.name}}; libSave();
+      draft = null; location.replace('#/build/' + r.id); }
+    catch (e) { toast(e.message); b.disabled = false; b.textContent = 'Build this course'; }
+  };
+}
+
+// Build runner: writes each lesson, then each unit's test questions and fact-check, then finishes.
+let building = null;
+async function renderBuild(uuid) {
+  setTab(null);
+  const entry = library[uuid];
+  if (!entry) { try { await fetchToLibrary(uuid); } catch (e) { return location.replace('#/courses'); } return renderBuild(uuid); }
+  if (entry.meta.status === 'ready') return location.replace(P(CB[cloudId(uuid)] || installCourse(uuid)));
+  const c = entry.content;
+  const steps = [];
+  const L_ = id => c.lessons.find(x => x.id === id) || {}, U_ = n => c.units.find(x => x.n === n) || {};
+  for (const u of c.units) {
+    for (const l of c.lessons.filter(x => x.unit === u.n)) { const id = l.id; steps.push({kind: 'lesson', id, label: l.title, done: () => !!(L_(id).body && L_(id).body.length)}); }
+    const n = u.n;
+    steps.push({kind: 'scenarios', unit: n, label: `Unit ${n} test questions`, done: () => (U_(n).scenarios || []).length > 0});
+    steps.push({kind: 'check', unit: n, label: `Unit ${n} fact-check`, done: () => !!U_(n).checked});
+  }
+  const draw = (current, err) => {
+    const n = steps.filter(s => s.done()).length, pct = Math.round(n / steps.length * 100);
+    view.innerHTML = topbar('Building your course') + `<div class="fade">
+      <div class="chero cg1"><h1>${esc(c.icon || '')} ${esc(c.title)}</h1><p class="stats-line">${n} of ${steps.length} steps · about ${Math.max(1, Math.round((steps.length - n) * 0.75))} min left</p>
+        <div class="bar" style="margin-top:14px;background:rgba(255,255,255,.25)"><i style="width:${pct}%;background:#fff"></i></div></div>
+      ${err ? `<div class="warn">${esc(err)} <div class="stack"><button class="btn primary" id="retry">Try again</button></div></div>` : `<p class="fine center">${current ? 'Writing: ' + esc(current.label) : 'Finishing…'} · keep the app open</p>`}
+      <div class="list" style="margin-top:14px">${steps.map(s => `<div class="item"><span>${esc(s.label)}</span><span>${s.done() ? '✓' : s === current ? '<span class="spin"></span>' : ''}</span></div>`).join('')}</div></div>`;
+    $('#back').onclick = () => { building = null; goBack('#/courses'); };
+    const r = $('#retry'); if (r) r.onclick = () => run();
+  };
+  const run = async () => {
+    const token = {}; building = token;
+    for (const s of steps) {
+      if (building !== token || location.hash !== '#/build/' + uuid) return;
+      if (s.done()) continue;
+      draw(s);
+      try {
+        if (s.kind === 'lesson') { const r = await fnCall('lesson', {courseId: uuid, lessonId: s.id}); const i = c.lessons.findIndex(l => l.id === s.id); c.lessons[i] = r.lesson; }
+        else { const r = await fnCall('unit', {courseId: uuid, unit: s.unit, step: s.kind}); const i = c.units.findIndex(u => u.n === s.unit);
+          if (s.kind === 'check') { const fresh = await rpc('get_course', {cid: uuid}); Object.assign(c, fresh.content); } else c.units[i] = r.unit; }
+        libSave();
+      } catch (e) { return draw(s, navigator.onLine ? e.message : 'You’re offline. Building continues when you’re back online.'); }
+    }
+    if (building !== token) return;
+    draw(null);
+    try { await fnCall('finish', {courseId: uuid}); await fetchToLibrary(uuid); building = null; toast('Your course is ready!'); location.replace(P(CB[cloudId(uuid)])); }
+    catch (e) { draw(null, e.message); }
+  };
+  run();
+}
+
+// Admin review queue
+async function renderAdmin() {
+  setTab(null);
+  view.innerHTML = topbar('Course reviews') + `<div class="card empty fade"><p>Loading…</p></div>`;
+  $('#back').onclick = () => goBack('#/settings');
+  let rows;
+  try { rows = await rpc('admin_queue'); } catch (e) { view.innerHTML = topbar('Course reviews') + `<div class="card empty"><p>${esc(e.message)}</p></div>`; $('#back').onclick = () => goBack('#/settings'); return; }
+  view.innerHTML = topbar('Course reviews') + `<div class="fade">${rows.length ? rows.map(r => `<div class="card" style="margin-bottom:10px">
+      <b style="font-weight:500">${esc(r.title)}</b><p class="fine">${esc(r.subtitle || '')}<br>by ${esc(r.author)} · ${r.lesson_count} lessons · ${r.lang === 'ar' ? 'Arabic' : 'English'}</p>
+      <p class="meta">${r.review_status === 'pending' ? '<span class="tag t2">Waiting for approval</span>' : ''}${r.report_count ? `<span class="tag tr">${plural(r.report_count, 'report')}</span>` : ''}</p>
+      ${r.reasons && r.reasons.length ? `<p class="fine">Reports: ${r.reasons.map(esc).join(' · ')}</p>` : ''}
+      <div class="stack two"><a class="btn" href="#/preview/${r.id}">Read it</a>${r.review_status === 'pending' ? `<button class="btn primary" data-dec="approve" data-id="${r.id}">Approve</button>` : `<button class="btn" data-dec="unpublish" data-id="${r.id}">Unpublish</button>`}</div>
+      <p class="fine">${r.review_status === 'pending' ? `<button class="linkbtn danger" data-dec="reject" data-id="${r.id}">Reject</button>` : ''} ${r.report_count ? `<button class="linkbtn" data-dec="dismiss_reports" data-id="${r.id}">Dismiss reports</button>` : ''}</p></div>`).join('')
+    : '<div class="card empty"><h2>All clear</h2><p>No courses waiting for approval and no reports.</p></div>'}</div>`;
+  $('#back').onclick = () => goBack('#/settings');
+  view.querySelectorAll('[data-dec]').forEach(b => b.onclick = async () => {
+    const note = b.dataset.dec === 'reject' || b.dataset.dec === 'unpublish' ? (prompt('Optional note for the author:') || null) : null;
+    try { await rpc('admin_review', {cid: b.dataset.id, decision: b.dataset.dec, note}); toast('Done.'); renderAdmin(); } catch (e) { toast(e.message); }
+  });
+}
+let isAdminCache = null;
+async function checkAdmin() { if (!signedIn()) return false; if (isAdminCache != null) return isAdminCache; try { isAdminCache = !!(await rpc('ai_quota')).admin; } catch (e) { isAdminCache = false; } return isAdminCache; }
+
 /* ───────── Router ───────── */
 const LEGACY = ['lesson', 'quiz', 'unit', 'test', 'final', 'certificate'];
 function route() {
@@ -993,9 +1277,11 @@ function route() {
   const inQuiz = (a === 'c' && ['quiz', 'test', 'final'].includes(parts[3])) || (a === 'review' && parts[2]);
   if (!inQuiz) session = null;
   if (!(a === 'cards' || (a === 'c' && parts[3] === 'cards'))) deck = null;
+  view.removeAttribute('dir'); view.removeAttribute('lang');
   if (a === 'c') {
     const c = CB[parts[2]], sub = parts[3], arg = parts[4];
     if (!c) return location.replace('#/home');
+    if (c.dir === 'rtl') { view.dir = 'rtl'; view.lang = 'ar'; }
     if (!sub) renderCourse(c);
     else if (sub === 'lesson') renderLesson(c, arg);
     else if (sub === 'quiz') routeQuiz(c, arg);
@@ -1008,6 +1294,11 @@ function route() {
   }
   else if (a === 'welcome') state.welcomed ? location.replace('#/home') : renderWelcome();
   else if (a === 'courses') renderCourses();
+  else if (a === 'catalog') renderCatalog();
+  else if (a === 'preview' || a === 'join') renderPreview(parts[2]);
+  else if (a === 'create') renderCreate();
+  else if (a === 'build') renderBuild(parts[2]);
+  else if (a === 'admin') renderAdmin();
   else if (a === 'friends') renderFriends();
   else if (a === 'friend') renderFriend(parts[2]);
   else if (a === 'account') renderAccount();
