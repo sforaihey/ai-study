@@ -1,9 +1,11 @@
 /* Steady service worker: caches the whole app so it works fully offline.
    Bump VERSION (here and in app.js) on every release, and list every course file in ASSETS. Progress lives in localStorage and is never touched here. */
-const VERSION = '3.3.0';
+const VERSION = '3.4.0';
 const CACHE = 'steady-' + VERSION;
-const ASSETS = ['./', 'index.html', 'app.css', 'app.js', 'config.js', 'courses/ai-foundations.js', 'courses/personal-finance.js', 'manifest.webmanifest',
-  'icon-192.png', 'icon-512.png', 'icon-maskable-512.png', 'apple-touch-icon.png'];
+const ASSETS = ['./', 'index.html', 'app.css', 'app.js', 'config.js', 'i18n.js', 'manifest.webmanifest',
+  'courses/ai-foundations.js', 'courses/ai-foundations.practice.js', 'courses/personal-finance.js', 'courses/personal-finance.practice.js',
+  'fonts/plex-ar-400.woff2', 'fonts/plex-ar-500.woff2', 'fonts/plex-ar-700.woff2',
+  'icon.svg', 'icon-192.png', 'icon-512.png', 'icon-maskable-512.png', 'apple-touch-icon.png'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE)
