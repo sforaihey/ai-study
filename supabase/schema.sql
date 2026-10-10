@@ -48,7 +48,9 @@ create table if not exists public.cheers (
 create index if not exists cheers_to_idx on public.cheers (to_id, seen);
 
 -- ── Helpers ────────────────────────────────────────────────────────────
-create or replace function public.is_friend(a uuid, b uuid) returns boolean
+create schema if not exists private;
+grant usage on schema private to authenticated;
+create or replace function private.is_friend(a uuid, b uuid) returns boolean
 language sql stable security definer set search_path = public as $$
   select exists (select 1 from friendships where user_a = least(a, b) and user_b = greatest(a, b));
 $$;
@@ -86,13 +88,13 @@ end $$;
 
 create or replace function public.remove_friend(friend uuid) returns void
 language sql security definer set search_path = public as $$
-  delete from friendships where user_a = least(auth.uid(), friend) and user_b = greatest(auth.uid(), friend);
+  delete from friendships where user_a = least((select auth.uid()), friend) and user_b = greatest((select auth.uid()), friend);
 $$;
 
 -- Permanently delete your own account and all its data.
 create or replace function public.delete_account() returns void
 language sql security definer set search_path = public as $$
-  delete from auth.users where id = auth.uid();
+  delete from auth.users where id = (select auth.uid());
 $$;
 
 -- ── Row-level security ─────────────────────────────────────────────────
@@ -103,29 +105,29 @@ alter table public.friendships enable row level security;
 alter table public.cheers      enable row level security;
 
 drop policy if exists "own or friend profile" on public.profiles;
-create policy "own or friend profile" on public.profiles for select using (id = auth.uid() or public.is_friend(id, auth.uid()));
+create policy "own or friend profile" on public.profiles for select using (id = (select auth.uid()) or private.is_friend(id, (select auth.uid())));
 drop policy if exists "update own profile" on public.profiles;
-create policy "update own profile" on public.profiles for update using (id = auth.uid()) with check (id = auth.uid());
+create policy "update own profile" on public.profiles for update using (id = (select auth.uid())) with check (id = (select auth.uid()));
 
 drop policy if exists "own progress" on public.progress;
-create policy "own progress" on public.progress for all using (user_id = auth.uid()) with check (user_id = auth.uid());
+create policy "own progress" on public.progress for all using (user_id = (select auth.uid())) with check (user_id = (select auth.uid()));
 
 drop policy if exists "read own or friend summary" on public.summaries;
-create policy "read own or friend summary" on public.summaries for select using (user_id = auth.uid() or public.is_friend(user_id, auth.uid()));
+create policy "read own or friend summary" on public.summaries for select using (user_id = (select auth.uid()) or private.is_friend(user_id, (select auth.uid())));
 drop policy if exists "write own summary" on public.summaries;
-create policy "write own summary" on public.summaries for insert with check (user_id = auth.uid());
+create policy "write own summary" on public.summaries for insert with check (user_id = (select auth.uid()));
 drop policy if exists "update own summary" on public.summaries;
-create policy "update own summary" on public.summaries for update using (user_id = auth.uid()) with check (user_id = auth.uid());
+create policy "update own summary" on public.summaries for update using (user_id = (select auth.uid())) with check (user_id = (select auth.uid()));
 
 drop policy if exists "see own friendships" on public.friendships;
-create policy "see own friendships" on public.friendships for select using (auth.uid() in (user_a, user_b));
+create policy "see own friendships" on public.friendships for select using ((select auth.uid()) in (user_a, user_b));
 
 drop policy if exists "see own cheers" on public.cheers;
-create policy "see own cheers" on public.cheers for select using (auth.uid() in (from_id, to_id));
+create policy "see own cheers" on public.cheers for select using ((select auth.uid()) in (from_id, to_id));
 drop policy if exists "cheer a friend" on public.cheers;
-create policy "cheer a friend" on public.cheers for insert with check (from_id = auth.uid() and public.is_friend(from_id, to_id));
+create policy "cheer a friend" on public.cheers for insert with check (from_id = (select auth.uid()) and private.is_friend(from_id, to_id));
 drop policy if exists "mark cheers seen" on public.cheers;
-create policy "mark cheers seen" on public.cheers for update using (to_id = auth.uid()) with check (to_id = auth.uid());
+create policy "mark cheers seen" on public.cheers for update using (to_id = (select auth.uid())) with check (to_id = (select auth.uid()));
 
 grant usage on schema public to anon, authenticated;
 grant select on public.profiles to authenticated;
@@ -135,4 +137,8 @@ grant select on public.friendships to authenticated;
 grant select, insert on public.cheers to authenticated;
 grant update (seen) on public.cheers to authenticated;
 grant execute on function public.add_friend(text), public.remove_friend(uuid), public.delete_account() to authenticated;
+revoke execute on function private.is_friend(uuid, uuid) from public, anon;
+grant execute on function private.is_friend(uuid, uuid) to authenticated;
+revoke execute on function public.handle_new_user() from public, anon, authenticated;
+drop function if exists public.is_friend(uuid, uuid);
 revoke execute on function public.add_friend(text), public.remove_friend(uuid), public.delete_account() from anon, public;
